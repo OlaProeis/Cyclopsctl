@@ -1,0 +1,60 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+
+# Dependency directories
+node_modules/
+
+# Environment variables and local secrets (never commit real keys)
+.env
+.env.local
+.env.*.local
+
+# Legacy local folder (not part of cyclopsctl; ignore if present on disk)
+/.taskmaster/
+
+# Local Cursor IDE config (MCP, rules, commands)
+# Cyclopsctl rules for target repos ship from src/cyclopsctl/templates/
+/.cursor/mcp.json
+/.cursor/commands/
+/.cursor/rules/
+
+# Local dev / test artifacts
+.bridge-stderr.txt
+test-run/
+
+# Local cyclopsctl run config (copy from cyclopsctl.toml.example)
+cyclopsctl.toml
+
+# Runtime state and history (cyclopsctl run)
+.cyclopsctl/
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS specific
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/

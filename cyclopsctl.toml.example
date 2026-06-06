@@ -1,0 +1,125 @@
+# Cyclopsctl — example configuration
+#
+# Copy this file to cyclopsctl.toml in the same directory and edit the values
+# for your repository:
+#
+#   cp cyclopsctl.toml.example cyclopsctl.toml
+#
+# Run with:
+#
+#   cyclopsctl run --config cyclopsctl.toml
+#
+# CLI flags always override values set in this file. For example,
+# `cyclopsctl run --config cyclopsctl.toml --cycles 3` uses 3 cycles
+# even when cycles = 5 below.
+
+# Absolute path to the target repository (required).
+# Use a full path such as /home/user/my-project or C:/dev/my-project.
+project_root = "/path/to/your/project"
+
+# Number of implement → update cycles to run (required).
+cycles = 5
+
+# First-run implementation prompt file (required for greenfield bootstrap only).
+# Used when current-handover-prompt.md is missing or when you pass --fresh.
+# Normal cyclopsctl runs use current_handover for cycle 1; not setup-ai-workflow.
+# Relative paths resolve against project_root.
+first_prompt = "prompts/setup-ai-workflow.md"
+
+# Handover prompt for the implementation phase (required).
+current_handover = "current-handover-prompt.md"
+
+# Handover prompt for the post-implementation update phase (required).
+update_handover = "update-handover-prompt.md"
+
+# Native complexity report used for model routing (optional).
+# Default: .cyclopsctl/reports/complexity-report.json
+complexity_report = ".cyclopsctl/reports/complexity-report.json"
+
+# Task tag context (optional; leave empty to omit).
+tag = ""
+
+# Fallback model when routing or Opus is unavailable (optional).
+# Default: composer-2.5
+default_model = "composer-2.5"
+
+# Optional model routing table (backward compatible when omitted).
+# When [routing] is absent, scores 1-8 use standard Composer and 9-10 use Opus.
+# [routing]
+# composer_tier = "standard"   # "standard" | "fast" | explicit model id
+# opus_enabled = true          # false disables Opus for high-complexity scores
+# rules_file = "routing.json"  # optional JSON file with rules/fallback keys
+#
+# [[routing.rules]]
+# min_score = 1
+# max_score = 6
+# model = "composer-standard"  # aliases: composer-2.5, composer-fast, opus-high-thinking
+#
+# [[routing.rules]]
+# min_score = 7
+# max_score = 8
+# model = "composer-2.5"
+#
+# [[routing.rules]]
+# min_score = 9
+# max_score = 10
+# model = "opus-high-thinking"
+#
+# [routing.fallback]
+# model = "composer-2.5"
+# missing_score = "composer-2.5"
+
+# Disable the Rich live dashboard and emit plain text logs (optional).
+# Useful for CI and log capture. Default: false
+# Override on the CLI with --plain.
+plain = false
+
+# Fail when current-handover Task ID differs from the selected task (optional).
+# Default: false (warn and continue). Override on the CLI with --strict-handover.
+strict_handover = false
+
+# How each cycle chooses its driving task (optional).
+# handover — use # Task ID: from current-handover-prompt.md (default)
+# sequential — lowest pending numeric task id (update-handover may need a companion
+#              instruction or cyclopsctl-owned next-task helper for this mode)
+# task_source = "handover"
+
+# Pin only the next cycle to a specific pending task (optional).
+# Validated via cyclopsctl tasks show. CLI: --task-id N
+# task_id = 16
+
+# Retry transient SDK/network failures during agent send/wait (optional).
+# Default: off (backward compatible). CLI: --retry-on transient
+# retry_on = "transient"
+# retry_max_attempts = 3
+# retry_backoff_seconds = [5, 15]
+
+# Crash recovery state file (optional).
+# Default: .cyclopsctl/state.json under project_root (gitignored).
+# Set to "" to disable persistence. CLI: --state-file PATH or --no-state
+# state_file = ".cyclopsctl/state.json"
+
+# Cross-invocation run history for resume-aware startup (optional).
+# Default: .cyclopsctl/run-history.json under project_root (gitignored).
+# History affects resume warnings only; cycle 1 uses current-handover when ready.
+# Set to "" to disable. CLI: --history-file PATH or --no-history
+# history_file = ".cyclopsctl/run-history.json"
+
+# Force first-prompt bootstrap for cycle 1, ignoring run history (optional).
+# Default: false. CLI: --fresh
+# fresh = false
+
+# Native task backend and bootstrap model defaults (optional).
+# backend: "native" (default)
+# parse_model / analyze_model: "auto" | "composer" | "sonnet" | "opus-high-thinking" |
+#   "sonnet-max" | "opus-max" | explicit Cursor model id
+#   auto tries Sonnet first, then falls back to Composer on local/credit failures.
+#   composer uses Cursor subscription (no extra API credits). Premium presets
+#   (opus-high-thinking, sonnet-max, opus-max) use API credits and fall back
+#   through weaker tiers to Composer. Set at init or via cyclopsctl init
+#   --bootstrap-model composer|auto|sonnet|opus-high-thinking|sonnet-max|opus-max.
+# max_tasks: optional cap on parent tasks when parsing a PRD (omit to let the model decide).
+[tasks]
+backend = "native"
+parse_model = "auto"
+analyze_model = "auto"

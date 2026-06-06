@@ -1,0 +1,56 @@
+---
+description: Cyclopsctl agent workflow — implementation vs update phase and native task CLI commands
+globs: **/*
+alwaysApply: true
+---
+
+# Cyclopsctl Agent Workflow
+
+This project uses the **Cyclopsctl** with a native task queue. Agents run in two phases per cycle.
+
+## Implementation phase
+
+When working from `current-handover-prompt.md`:
+
+- Implement and test **only** the current parent task.
+- **Do not** mark tasks done, edit handover files, or update docs.
+- **Do not** run `cyclopsctl tasks set-status`, `list`, or `show` during implementation.
+- Run the project test command before finishing.
+
+## Update phase
+
+When `update-handover-prompt.md` is provided (same session, after implementation):
+
+- Follow every step in `update-handover-prompt.md`.
+- Use **`cyclopsctl tasks` CLI only** for task queue operations.
+- Use `--project-root` from the handover `## Environment` section (or `{ROOT}` when shown in generated templates).
+
+### Update-phase task commands
+
+Mark the completed task done:
+
+```bash
+cyclopsctl tasks set-status --id=<current-task-id> --status=done --project-root <project-root>
+```
+
+List pending tasks (pick the **lowest numeric parent id**, not priority ordering):
+
+```bash
+cyclopsctl tasks list pending --format json --project-root <project-root>
+```
+
+Load the next task details for handover rewrite:
+
+```bash
+cyclopsctl tasks show <next-task-id> --format json --project-root <project-root>
+```
+
+After marking done and selecting the next task, rewrite `current-handover-prompt.md` with the new `# Task ID:` and update `ai-context.md` project memory per the update handover instructions.
+
+## Handover files
+
+| File | Who may edit | When |
+|------|----------------|------|
+| `current-handover-prompt.md` | Update-phase agent only | After implementation |
+| `update-handover-prompt.md` | Human / template only | Never edited by agents |
+| `ai-context.md` | Update-phase agent only | Every update phase |
