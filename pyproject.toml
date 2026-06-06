@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cyclopsctl"
 version = "0.1.0"
-description = "CLI orchestration layer for Cursor agent runs with native task queue and file-based handovers"
+description = "Cursor task orchestrator CLI — orchestrate agent implement/update cycles, PRD bootstrap, model routing, and handover verification"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

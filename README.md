@@ -1,14 +1,14 @@
-# Cyclopsctl
+# Cyclopsctl — Cursor task orchestrator
 
 [![GitHub](https://img.shields.io/badge/GitHub-OlaProeis%2FCyclopsctl-blue?logo=github)](https://github.com/OlaProeis/Cyclopsctl)
 
-**Automate Cursor agent task cycles from your terminal** — implement, update, verify, repeat.
+**Orchestrate Cursor agent task cycles from your terminal** — implement, update, verify, repeat.
 
-Cyclopsctl is a lightweight Python CLI for **task-driven development** with [Cursor](https://cursor.com) agents. It runs a strict **two-phase workflow** on each parent task: an **implementation** pass (new agent), an **update** pass (same session), then **handover verification** so the next task is ready. Models are routed from complexity scores; a Rich dashboard shows live progress.
+Cyclopsctl is a lightweight **Cursor task orchestrator**: a Python CLI that sequences [Cursor](https://cursor.com) agent runs for **task-driven development**. On each parent task it orchestrates a strict **two-phase workflow** — an **implementation** pass (new agent), an **update** pass (same session), then **handover verification** so the queue advances. Models are routed from complexity scores; a Rich dashboard shows live progress.
 
-**You keep control.** Task planning, documentation, and handover text live in Markdown prompt files and a native queue under `.cyclopsctl/` — not inside the CLI. Cyclopsctl sequences agent runs, waits for completion, and **fails closed** when handovers do not advance (no silent re-runs of the same task).
+**Runtime orchestration, not autonomous planning.** The orchestrator sequences agent runs, waits for completion, and **fails closed** when handovers do not advance (no silent re-runs of the same task). Task planning, documentation, and handover text stay in Markdown prompt files and a native queue under `.cyclopsctl/` — not inside the CLI.
 
-**Who it is for:** developers running multi-task Cursor workflows who want file-based continuity (`current-handover-prompt.md`, `ai-context.md`) without manually chaining implement → update sessions.
+**Who it is for:** developers running multi-task Cursor workflows who want file-based continuity (`current-handover-prompt.md`, `ai-context.md`) and a reliable **implement → update** orchestrator without manually chaining Cursor sessions.
 
 The codebase is **100% AI-generated** (Python, docs, and config), built with the same [AI-assisted workflow](https://github.com/OlaProeis/Ferrite/blob/master/docs/ai-workflow/ai-development-workflow.md) used for [Ferrite](https://github.com/OlaProeis/Ferrite). Human work is product direction, testing, and orchestration.
 
@@ -111,9 +111,9 @@ Most commands default to the **current working directory** as the project root. 
 
 ---
 
-## What the cyclopsctl does (and does not do)
+## What the orchestrator does (and does not do)
 
-| The cyclopsctl **does** | The cyclopsctl **does not** |
+| The orchestrator **does** | The orchestrator **does not** |
 |---------------------------|-------------------------------|
 | Run **implement → update** cycles with handover verification | Plan tasks or edit `tasks.json` during cycles |
 | **`init`** scaffold and **`bootstrap`** PRD → native tasks pipeline | Rewrite handover templates |
@@ -253,11 +253,11 @@ Optional **`[routing]`** in TOML sets score bands, `composer_tier`, `opus_enable
 
 ## How it works
 
-Each cycle is one **parent task**. The cyclopsctl runs **implementation** (new agent), **update** (same agent), then **verification** (handover must advance).
+Each cycle is one **parent task**. The orchestrator runs **implementation** (new agent), **update** (same agent), then **verification** (handover must advance).
 
 ```mermaid
 sequenceDiagram
-    participant O as Cyclopsctl
+    participant O as Cyclopsctl orchestrator
     participant T as cyclopsctl tasks
     participant A as Cursor Agent
     participant H as current-handover-prompt.md
@@ -285,7 +285,7 @@ sequenceDiagram
 
 ### Handover verification
 
-After every update phase, the cyclopsctl compares before/after snapshots of `current-handover-prompt.md`. The run **fails** if Task ID and substantive content are unchanged—stuck on the same task.
+After every update phase, the orchestrator compares before/after snapshots of `current-handover-prompt.md`. The run **fails** if Task ID and substantive content are unchanged—stuck on the same task.
 
 See [`docs/tasks/task-selection.md`](docs/tasks/task-selection.md), [`docs/workflow/handover-verification.md`](docs/workflow/handover-verification.md), and [`docs/runtime/run-history.md`](docs/runtime/run-history.md) for details.
 
@@ -296,7 +296,7 @@ See [`docs/tasks/task-selection.md`](docs/tasks/task-selection.md), [`docs/workf
 | File | Role |
 |------|------|
 | `current-handover-prompt.md` | Next implementation task; must include `# Task ID: <n>` (parent only); rewritten by update agent |
-| `update-handover-prompt.md` | Fixed template; cyclopsctl passes through unchanged |
+| `update-handover-prompt.md` | Fixed template; orchestrator passes through unchanged |
 | `ai-context.md` | Prepended to implementation prompts; phase rules for agents |
 
 See `ai-context.md` in this repo for the canonical rule set.
@@ -337,16 +337,17 @@ python -m pytest
 
 For manual validation on a **fresh directory** or an **existing repository**, follow [`docs/guides/testing-guide.md`](docs/guides/testing-guide.md). It covers greenfield init → launch, brownfield attach/continue scenarios, and automated pytest regression.
 
-The cyclopsctl is intentionally small: thin CLI, logic in focused modules, strict error handling, native tasks only.
+The orchestrator is intentionally small: thin CLI, logic in focused modules, strict error handling, native tasks only.
 
 ---
 
 ## Design philosophy
 
-1. **Scenario-first adoption** — `init` and `launch` are the default path; `run` and flags remain for automation.
-2. **File-based continuity** — Prompts, handovers, and `ai-context.md` are the workflow contract.
-3. **Two-phase discipline** — Implementation agents implement; update agents mark done and advance handovers.
-4. **Fail closed on stuck handovers** — Better to stop than loop the same task unnoticed.
+1. **Orchestrate runs, not plans** — Sequence agent cycles, routing, and verification; task content lives in prompts and the native queue.
+2. **Scenario-first adoption** — `init` and `launch` are the default path; `run` and flags remain for automation.
+3. **File-based continuity** — Prompts, handovers, and `ai-context.md` are the workflow contract.
+4. **Two-phase discipline** — Implementation agents implement; update agents mark done and advance handovers.
+5. **Fail closed on stuck handovers** — Better to stop than loop the same task unnoticed.
 
 Full product requirements: [`docs/prd.md`](docs/prd.md).
 
