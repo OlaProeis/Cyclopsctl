@@ -748,6 +748,35 @@ def prd_hash_changed(project_root: Path, prd_path: Path) -> bool:
     return sha256_file(prd_path) != last.sha256
 
 
+def _stored_prd_relpath(project_root: Path, prd_path: Path) -> str:
+    """Return the PRD path as stored in ``last-parsed-prd.json`` (posix relative)."""
+    try:
+        return prd_path.resolve().relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        return prd_path.name
+
+
+def prd_source_changed(
+    project_root: Path,
+    prd_path: Path,
+    *,
+    last: LastParsedPrd | None = None,
+) -> bool:
+    """
+    Return True when ``prd_path`` differs from the last parsed PRD by path or hash.
+
+    A different file path (e.g. ``prd-phase2.md`` vs ``prd.md``) counts as a
+    change even when its content hash is unrelated, so pointing launch at a new
+    PRD file starts a fresh phase tag.
+    """
+    resolved_last = last if last is not None else load_last_parsed_prd(project_root)
+    if resolved_last is None:
+        return False
+    if _stored_prd_relpath(project_root, prd_path) != resolved_last.path:
+        return True
+    return sha256_file(prd_path) != resolved_last.sha256
+
+
 def handle_launch_prd_change(
     project_root: Path,
     *,
@@ -775,24 +804,36 @@ def handle_launch_prd_change(
     if not is_project_initialized_for_launch(root):
         raise LaunchReadinessError(INIT_REQUIRED_MESSAGE)
 
-    resolved_prd = prd_path or (root / DEFAULT_PRD)
-    if not resolved_prd.is_absolute():
-        resolved_prd = (root / resolved_prd).resolve()
-    if not resolved_prd.is_file():
-        raise LaunchReadinessError(f"PRD file not found: {resolved_prd}")
+    explicit_prd: Path | None = None
+    if prd_path is not None:
+        explicit_prd = prd_path if prd_path.is_absolute() else (root / prd_path).resolve()
 
     last = load_last_parsed_prd(root)
     if last is None:
-        backfill_last_parsed_prd_if_missing(
-            root,
-            resolved_prd,
-            tag=explicit_tag,
-        )
+        # Backfill from the canonical default PRD when present so an explicit
+        # ``--prd new-file.md`` is still recognized as a phase change afterwards.
+        default_prd = root / DEFAULT_PRD
+        backfill_src = explicit_prd or (default_prd if default_prd.is_file() else None)
+        if backfill_src is not None and backfill_src.is_file():
+            backfill_last_parsed_prd_if_missing(
+                root,
+                backfill_src,
+                tag=explicit_tag,
+            )
         last = load_last_parsed_prd(root)
         if last is None:
             return None
 
-    if not prd_hash_changed(root, resolved_prd):
+    # Bare launch tracks the PRD that produced the current tag; an explicit
+    # --prd points at a (possibly new) file to start the next phase.
+    if explicit_prd is not None:
+        resolved_prd = explicit_prd
+    else:
+        resolved_prd = (root / last.path).resolve()
+    if not resolved_prd.is_file():
+        raise LaunchReadinessError(f"PRD file not found: {resolved_prd}")
+
+    if not prd_source_changed(root, resolved_prd, last=last):
         return None
 
     if not tasks_exist_in_tag(root, tag=last.tag):
@@ -1434,4 +1475,9 @@ def format_ready_message(result: ProjectSetupResult) -> str:
         )
     elif result.pending_count == 0:
         lines.append("  Next task: (queue complete)")
+        lines.append(
+            "  Phase complete — start the next phase with "
+            "`cyclopsctl launch --prd <new-prd.md>` to parse a new PRD into a "
+            "fresh tag (keeps this tag's history)."
+        )
     return "\n".join(lines)

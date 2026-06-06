@@ -12,6 +12,8 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
+from dataclasses import dataclass
+
 from cyclopsctl.config import resolve_project_root
 from cyclopsctl.tasks.store import (
     TaskStore,
@@ -19,6 +21,7 @@ from cyclopsctl.tasks.store import (
     TaskStoreError,
     TaskStoreNotFoundError,
     TaskStoreValidationError,
+    load_tasks_document,
 )
 from cyclopsctl.tasks.types import NextTaskLookup, NextTaskResult, TaskShowDetail
 
@@ -531,6 +534,123 @@ def format_show_plain(detail: TaskShowDetail) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class TagSummary:
+    """Per-tag task counts for ``cyclopsctl tasks tags``."""
+
+    name: str
+    total: int
+    done: int
+    pending: int
+    active: bool
+
+
+def list_all_tags(project_root: Path) -> tuple[str, list[TagSummary]]:
+    """Return the active tag and a per-tag task-count summary."""
+    store = TaskStore(project_root.resolve())
+    active_tag = store.current_tag()
+    if not store.tasks_path.is_file():
+        return active_tag, []
+    try:
+        document = load_tasks_document(store.tasks_path)
+    except (TaskStoreCorruptError, TaskStoreNotFoundError) as exc:
+        raise TasksCliError(str(exc)) from exc
+
+    summaries: list[TagSummary] = []
+    for tag_name in sorted(document):
+        tag_data = document[tag_name]
+        tasks = tag_data.get("tasks", []) if isinstance(tag_data, dict) else []
+        valid = [task for task in tasks if isinstance(task, dict)]
+        done = sum(1 for task in valid if _task_status(task) == DONE_STATUS)
+        total = len(valid)
+        summaries.append(
+            TagSummary(
+                name=tag_name,
+                total=total,
+                done=done,
+                pending=total - done,
+                active=(tag_name == active_tag),
+            )
+        )
+    return active_tag, summaries
+
+
+def switch_tag(project_root: Path, name: str) -> str:
+    """Set the active tag, validating that it exists in the tasks document."""
+    normalized = str(name).strip()
+    if not normalized:
+        raise TasksCliError("tag name must be non-empty")
+    store = TaskStore(project_root.resolve())
+    if not store.tasks_path.is_file():
+        raise TasksCliError(
+            "no tasks document found; run `cyclopsctl init` first"
+        )
+    try:
+        document = load_tasks_document(store.tasks_path)
+    except (TaskStoreCorruptError, TaskStoreNotFoundError) as exc:
+        raise TasksCliError(str(exc)) from exc
+    if normalized not in document:
+        available = ", ".join(sorted(document)) or "(none)"
+        raise TasksCliError(
+            f"tag not found: {normalized}. Available tags: {available}"
+        )
+    store.set_current_tag(normalized)
+    return normalized
+
+
+def format_tags_json(active_tag: str, summaries: list[TagSummary]) -> str:
+    payload = {
+        "activeTag": active_tag,
+        "tags": [
+            {
+                "name": summary.name,
+                "total": summary.total,
+                "done": summary.done,
+                "pending": summary.pending,
+                "active": summary.active,
+            }
+            for summary in summaries
+        ],
+    }
+    return json.dumps(payload, indent=2)
+
+
+def format_tags_table(active_tag: str, summaries: list[TagSummary]) -> Table:
+    table = Table(title="Task tags", show_header=True, show_lines=False)
+    table.add_column("", no_wrap=True)
+    table.add_column("Tag", style="bold", overflow="fold")
+    table.add_column("Total", justify="right", no_wrap=True)
+    table.add_column("Done", justify="right", no_wrap=True)
+    table.add_column("Pending", justify="right", no_wrap=True)
+    if not summaries:
+        table.add_row("", "(none)", "—", "—", "—")
+        return table
+    for summary in summaries:
+        marker = "►" if summary.active else ""
+        table.add_row(
+            marker,
+            summary.name,
+            str(summary.total),
+            str(summary.done),
+            str(summary.pending),
+        )
+    return table
+
+
+def format_tags_plain(active_tag: str, summaries: list[TagSummary]) -> str:
+    lines = [f"Task tags (active: {active_tag})"]
+    if not summaries:
+        lines.append("  (none)")
+        return "\n".join(lines)
+    for summary in summaries:
+        marker = "* " if summary.active else "  "
+        lines.append(
+            f"{marker}{summary.name}: {summary.total} total, "
+            f"{summary.done} done, {summary.pending} pending"
+        )
+    return "\n".join(lines)
+
+
 def _emit_output(text: str) -> None:
     print(text)
 
@@ -642,11 +762,49 @@ def run_set_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_tags(args: argparse.Namespace) -> int:
+    try:
+        project_root = resolve_project_root(args.project_root)
+        active_tag, summaries = list_all_tags(project_root)
+    except TasksCliError as exc:
+        _emit_error(str(exc))
+        return exc.exit_code
+    except TaskStoreError as exc:
+        _emit_error(str(exc))
+        return 1
+
+    if args.format == "json":
+        _emit_output(format_tags_json(active_tag, summaries))
+    elif getattr(args, "plain_table", False):
+        _emit_output(format_tags_plain(active_tag, summaries))
+    else:
+        Console().print(format_tags_table(active_tag, summaries))
+    return 0
+
+
+def run_use_tag(args: argparse.Namespace) -> int:
+    try:
+        project_root = resolve_project_root(args.project_root)
+        switched = switch_tag(project_root, args.name)
+    except TasksCliError as exc:
+        _emit_error(str(exc))
+        return exc.exit_code
+    except TaskStoreError as exc:
+        _emit_error(str(exc))
+        return 1
+
+    if args.format == "json":
+        _emit_output(json.dumps({"activeTag": switched}, indent=2))
+    else:
+        _emit_output(f"Switched active tag to {switched!r}.")
+    return 0
+
+
 def add_tasks_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register the ``cyclopsctl tasks`` command group."""
     tasks_parser = subparsers.add_parser(
         "tasks",
-        help="Native task queue CRUD (list [filter], show, next, set-status)",
+        help="Native task queue CRUD (list [filter], show, next, set-status, tags, use-tag)",
     )
     tasks_subparsers = tasks_parser.add_subparsers(dest="tasks_command", required=True)
 
@@ -725,6 +883,29 @@ def add_tasks_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="New status (pending, in-progress, done, review, cancelled, blocked, deferred)",
     )
     set_status_parser.set_defaults(tasks_handler=run_set_status)
+
+    tags_parser = tasks_subparsers.add_parser(
+        "tags",
+        parents=[shared],
+        help="List task tags with per-tag task counts and the active tag",
+    )
+    tags_parser.add_argument(
+        "--plain-table",
+        action="store_true",
+        help="Use plain text instead of Rich (plain format only)",
+    )
+    tags_parser.set_defaults(tasks_handler=run_tags)
+
+    use_tag_parser = tasks_subparsers.add_parser(
+        "use-tag",
+        parents=[shared],
+        help="Switch the active tag context to an existing tag",
+    )
+    use_tag_parser.add_argument(
+        "name",
+        help="Tag name to switch to (must already exist)",
+    )
+    use_tag_parser.set_defaults(tasks_handler=run_use_tag)
 
 
 def run_tasks_command(args: argparse.Namespace) -> int:

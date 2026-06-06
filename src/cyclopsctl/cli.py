@@ -324,6 +324,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="PRD file path for bootstrap flow (default: prd.md)",
     )
     launch_parser.add_argument(
+        "--prd",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "PRD file for the run flow; pointing at a new/changed file starts a "
+            "fresh phase tag (e.g. --prd prd-phase2.md). Default: prd.md"
+        ),
+    )
+    launch_parser.add_argument(
         "--skip-analyze",
         action="store_true",
         help="Skip analyze-complexity during bootstrap flow",
@@ -856,6 +865,7 @@ def _launch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         composer_tier=args.composer_tier,
         opus_enabled=opus_enabled,
         from_prd=args.from_prd,
+        prd=args.prd,
         skip_analyze=True if args.skip_analyze else None,
         doctor_fix=True if args.fix else None,
         assume_yes=args.yes,

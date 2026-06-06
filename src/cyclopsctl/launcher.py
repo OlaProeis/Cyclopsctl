@@ -29,6 +29,7 @@ from cyclopsctl.project_setup import (
     handle_launch_prd_change,
     is_brownfield_attach_context,
     is_project_initialized_for_launch,
+    load_last_parsed_prd,
 )
 from cyclopsctl.prompt import PromptError, parse_task_id, read_prompt_text
 from cyclopsctl.tasks.backend import TaskBackend, TaskBackendConfig, get_task_backend
@@ -895,6 +896,17 @@ def _prompt_new_tag_name(default: str, prompts: LaunchPrompts) -> str | None:
     return resolved if resolved else default
 
 
+def format_phase_complete_hint(tag: str | None) -> str:
+    """Return a nudge to start a new phase when the current tag's queue is done."""
+    tag_label = f" '{tag}'" if tag else ""
+    return (
+        f"cyclopsctl: tag{tag_label} has no pending tasks — this phase looks "
+        "complete. Start the next phase from a new PRD with "
+        "`cyclopsctl launch --prd <new-prd.md>` (keeps this tag's history), or "
+        "browse phases with `cyclopsctl tasks tags`."
+    )
+
+
 def _apply_prd_change_at_launch(
     config: LaunchConfig,
     *,
@@ -905,13 +917,15 @@ def _apply_prd_change_at_launch(
     prompts: LaunchPrompts | None,
     plain: bool,
     stderr_is_tty: bool | None,
+    prd_path: Path | None = None,
 ) -> tuple[LaunchConfig, LaunchStatus | None, LaunchDispatch | None]:
     """
     Run PRD-change detection for launch RUN actions.
 
     Returns ``(config, status, None)`` on success. When ``status`` is not None the
     caller should use it instead of re-gathering. Returns early ``LaunchDispatch``
-    when launch must stop.
+    when launch must stop. ``prd_path`` overrides the default ``prd.md`` so an
+    explicit ``--prd new-file.md`` starts a fresh phase tag.
     """
     if not is_project_initialized_for_launch(
         config.project_root,
@@ -928,9 +942,27 @@ def _apply_prd_change_at_launch(
             exit_code=1,
         )
 
-    if not (config.project_root / DEFAULT_PRD).is_file():
-        print(f"cyclopsctl: {ATTACH_LAUNCH_INFO_MESSAGE}", file=sys.stderr)
-        return config, None, None
+    if prd_path is not None:
+        resolved_prd = prd_path
+        if not resolved_prd.is_absolute():
+            resolved_prd = (config.project_root / resolved_prd).resolve()
+        if not resolved_prd.is_file():
+            print(f"cyclopsctl: error: PRD file not found: {resolved_prd}", file=sys.stderr)
+            return config, None, LaunchDispatch(
+                action=LaunchAction.RUN,
+                argv=None,
+                exit_code=GENERAL_EXIT_CODE,
+            )
+    else:
+        # Bare launch tracks the PRD that produced the current tag (falling back
+        # to prd.md), so a renamed phase file does not look like an attach repo.
+        last = load_last_parsed_prd(config.project_root)
+        current_prd = (
+            (config.project_root / last.path) if last is not None else (config.project_root / DEFAULT_PRD)
+        )
+        if not current_prd.is_file():
+            print(f"cyclopsctl: {ATTACH_LAUNCH_INFO_MESSAGE}", file=sys.stderr)
+            return config, None, None
 
     tag_prompt = None
     if interactive and not assume_yes:
@@ -940,6 +972,7 @@ def _apply_prd_change_at_launch(
     try:
         prd_result = handle_launch_prd_change(
             config.project_root,
+            prd_path=prd_path,
             current_handover=config.current_handover,
             complexity_report=config.complexity_report,
             ai_context=config.ai_context,
@@ -1012,6 +1045,7 @@ def run_launch(
     composer_tier: str | None = None,
     opus_enabled: bool | None = None,
     from_prd: Path | None = None,
+    prd: Path | None = None,
     skip_analyze: bool | None = None,
     doctor_fix: bool | None = None,
     no_new_tag: bool = False,
@@ -1114,6 +1148,7 @@ def run_launch(
         prompts=prompts,
         plain=use_plain,
         stderr_is_tty=stderr_is_tty,
+        prd_path=prd,
     )
     if prd_dispatch is not None:
         return prd_dispatch
@@ -1131,6 +1166,10 @@ def run_launch(
         print(sync_message, file=sys.stderr)
 
     effective_tag = tag if tag is not None else display_config.tag
+
+    if getattr(status, "pending_count", None) == 0:
+        hint_tag = effective_tag or getattr(status, "active_tag", None)
+        print(format_phase_complete_hint(hint_tag), file=sys.stderr)
 
     try:
         if interactive and cycles is None:

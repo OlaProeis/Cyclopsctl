@@ -191,14 +191,17 @@ Inspect and update the native queue under `.cyclopsctl/tasks/`. Run from the pro
 | `cyclopsctl tasks show <id>` | Full task record (`--format json` for scripts) |
 | `cyclopsctl tasks next` | Lowest `pending` task whose dependencies are all `done` |
 | `cyclopsctl tasks set-status --id=<id> --status=done` | Update status and `updatedAt` |
+| `cyclopsctl tasks tags` | List tags (phases) with total / done / pending counts; marks the active tag |
+| `cyclopsctl tasks use-tag <name>` | Switch the active tag context to an existing tag |
 
 Shared flags: `--project-root`, `--tag`, `--format json|plain`. Use `--plain-table` with plain format for a fixed-width text table (no Rich).
 
 Full reference: [`docs/tasks/tasks-cli.md`](docs/tasks/tasks-cli.md).
 
-### Tags and profiles
+### Tags, phases, and profiles
 
-- **Tags:** pass `--tag NAME` on `run` / `launch`, or set `tag = "..."` in `cyclopsctl.toml`.
+- **Tags:** pass `--tag NAME` on `run` / `launch`, or set `tag = "..."` in `cyclopsctl.toml`. Inspect and switch with `cyclopsctl tasks tags` / `cyclopsctl tasks use-tag <name>`.
+- **Multi-phase PRDs:** each PRD/phase maps to its own tag. Start the next phase with `cyclopsctl launch --prd prd-phase2.md` (a new file) or by editing `prd.md` in place — launch parses it into a **fresh tag**, syncs a clean handover, and keeps the previous phase's tasks intact as history. `init` and `bootstrap` refuse to overwrite a finished tag; they point you at `launch --prd`. See [`docs/cli/launch-prd-change.md`](docs/cli/launch-prd-change.md).
 - **Profiles:** named `[profile.solo-default]` (and custom) tables in `cyclopsctl.toml`; seed via `cyclopsctl init --profile NAME`. CLI flags override profile values.
 
 ### Model routing

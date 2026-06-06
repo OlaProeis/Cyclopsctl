@@ -67,7 +67,7 @@
 - `cli/model-inspection-cli.md` - `cyclopsctl models` diagnostic subcommand and routing preset report.
 - `cli/doctor-cli.md` - `cyclopsctl doctor` / `check` preflight diagnostics, native checks, remediation hints, `--fix` stub `.env`, exit codes, and Rich/plain output.
 - `cli/launch-cli.md` - Default `cyclopsctl` / `cyclopsctl launch` cycles-only TTY flow, auto handover repair, inferred resume/routing from config, power-user `--action` dispatch, and internal `run` spawn.
-- `cli/launch-prd-change.md` - PRD hash detection at launch, new tag creation, parse/analyze/handover sync, and tag naming when `prd.md` changes on a mature project.
+- `cli/launch-prd-change.md` - Path-aware PRD-change detection at launch (`--prd` for new phase files or in-place `prd.md` edits), new tag creation, parse/analyze/handover sync, tag naming, phase-complete nudge, and the bootstrap/init destructive-reparse guards.
 - `cli/launch-attach-readiness.md` - Relaxed `cyclopsctl launch` readiness for attach repos: toml + non-empty tasks + repairable handover (no PRD/last-parsed), `prepare_launch_workspace`, and attach-aware doctor remediation.
 
 ## Testing

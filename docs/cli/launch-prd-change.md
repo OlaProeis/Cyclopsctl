@@ -1,20 +1,30 @@
 # Launch PRD-change detection and new-tag flow
 
-When an existing project updates `prd.md`, `cyclopsctl launch` (RUN action) detects the change and starts a fresh native task queue on a new tag instead of re-parsing into the prior tag.
+When an existing project moves to a new phase — either by **editing `prd.md` in place** or by pointing at a **new PRD file** (`cyclopsctl launch --prd prd-phase2.md`) — `cyclopsctl launch` (RUN action) detects the change and starts a fresh native task queue on a new tag instead of re-parsing into the prior tag. Old tags (phases) stay intact and browsable via `cyclopsctl tasks tags`.
+
+## PRD source resolution
+
+The run-path PRD is resolved as:
+
+1. `--prd PATH` when supplied (explicit phase file), else
+2. the file recorded in `.cyclopsctl/last-parsed-prd.json` (the PRD that produced the current tag), else
+3. `prd.md`.
+
+This means a **bare `launch`** keeps tracking the current phase's PRD even after it was renamed (e.g. `prd-phase2.md`), so it never spuriously re-parses `prd.md` into yet another tag.
 
 ## When it runs
 
 PRD-change handling runs at the start of the **Run** launch path when:
 
 - `cyclopsctl.toml` and native task storage exist (initialized project)
-- `prd.md` is present
-- `.cyclopsctl/last-parsed-prd.json` records a prior parse
-- The current PRD SHA-256 differs from the stored hash
+- The resolved PRD file is present
+- `.cyclopsctl/last-parsed-prd.json` records a prior parse (auto-backfilled from `prd.md` when missing)
+- The resolved PRD **source changed** — its stored relative path differs from `last-parsed-prd.json` **or** its SHA-256 differs from the stored hash (`prd_source_changed`)
 - Tasks already exist in the tag recorded by `last-parsed-prd.json`
 
-If the project is not initialized, launch exits with *Run `cyclopsctl init` first*. If `prd.md` is missing, PRD-change detection is skipped.
+If the project is not initialized, launch exits with *Run `cyclopsctl init` first*. If the resolved PRD is missing on a bare launch, PRD-change detection is skipped (attach mode); a missing **explicit** `--prd` file is a hard error.
 
-Unchanged PRD: no tag creation; launch continues with the existing queue.
+Unchanged PRD source: no tag creation; launch continues with the existing queue.
 
 ## New-tag pipeline
 
@@ -42,19 +52,28 @@ Prior tags are never deleted. The active tag for the session is set on the assem
 
 Non-interactive launches (`--yes`) auto-accept the proposed tag. Interactive TTY mode can confirm or edit the tag name.
 
-## Guard during init
+## Phase-complete nudge
 
-`cyclopsctl init` (`project_setup.run_project_setup`) refuses to re-parse when tasks exist and the PRD hash changed. It prints *PRD changed — run `cyclopsctl launch` to start a new task list.* Launch owns new-tag creation.
+When the active tag's queue has **no pending tasks**, launch prints a hint to start the next phase (`cyclopsctl launch --prd <new-prd.md>`) or browse phases (`cyclopsctl tasks tags`). `cyclopsctl init` prints the same nudge in its ready message when the queue is complete.
+
+## Guards against destructive re-parse
+
+- `cyclopsctl init` (`project_setup.run_project_setup`) refuses to re-parse when tasks exist and the PRD hash changed. It prints *PRD changed — run `cyclopsctl launch` to start a new task list.*
+- `cyclopsctl bootstrap` (`run_bootstrap`) refuses a destructive replace when the target tag already has tasks and the PRD source changed (path or hash), unless `--append` is set or a fresh `--tag` is targeted. It directs the user to `cyclopsctl launch --prd <file>`.
+
+Launch owns new-tag creation.
 
 ## Implementation
 
 | Symbol | Module | Role |
 |--------|--------|------|
-| `handle_launch_prd_change` | `project_setup.py` | PRD hash compare, tag pipeline, state update |
+| `handle_launch_prd_change` | `project_setup.py` | PRD source compare, tag pipeline, state update |
+| `prd_source_changed` / `_stored_prd_relpath` | `project_setup.py` | Path-or-hash change detection vs `last-parsed-prd.json` |
 | `propose_tag_name` / `slugify_tag_name` | `project_setup.py` | Tag slug from PRD title or date |
 | `load_last_parsed_prd` / `write_last_parsed_prd` | `project_setup.py` | Parse state under `.cyclopsctl/` |
-| `_apply_prd_change_at_launch` | `launcher.py` | Run-path integration, status refresh |
+| `_guard_destructive_reparse` | `bootstrap.py` | Block re-parse that would overwrite an existing tag's tasks |
+| `_apply_prd_change_at_launch` / `format_phase_complete_hint` | `launcher.py` | Run-path integration, status refresh, phase-complete nudge |
 
-Tests: `tests/test_launch_prd_change.py`, `tests/test_project_setup.py` (PRD-change guard).
+Tests: `tests/test_launch_prd_change.py`, `tests/test_phase_continuation.py`, `tests/test_project_setup.py` (PRD-change guard).
 
 Related: [launch-cli.md](launch-cli.md), [project-setup.md](../setup/project-setup.md), [prd-bootstrap.md](../setup/prd-bootstrap.md).

@@ -138,7 +138,7 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 | Rich live dashboard / post-run summary | `src/cyclopsctl/tui.py`, `docs/runtime/cycle-dashboard.md`, `docs/runtime/post-run-summary.md` |
 | Agent plan panel (TodoWrite) | `runner.py` (`parse_todo_write_from_event`), `tui.py` (`AgentPlanState`, `plan_callback_for_logger`), `docs/runtime/agent-plan-panel.md` |
 | TUI task queue strip | `loop.py` (`_capture_queue_snapshot`, `session_completed_ids`), `tui.py` (`TaskQueueSnapshot`, `TaskQueueStripState`, `format_queue_strip_line`), `docs/runtime/tui-queue-strip.md` |
-| Native tasks CLI (`list` table, `list pending` / `done`, `show`, `next`, `set-status`) | `src/cyclopsctl/tasks/cli.py`, `docs/tasks/tasks-cli.md` |
+| Native tasks CLI (`list` table, `list pending` / `done`, `show`, `next`, `set-status`, `tags`, `use-tag`) | `src/cyclopsctl/tasks/cli.py`, `docs/tasks/tasks-cli.md` |
 | Task backend protocol / factory | `src/cyclopsctl/tasks/`, `docs/tasks/task-backend.md` |
 | Init/launch/bootstrap backend wiring | `src/cyclopsctl/project_setup.py`, `bootstrap.py`, `launcher.py`, `docs/tasks/backend-wiring.md` |
 | Native task JSON storage | `src/cyclopsctl/tasks/store.py`, `docs/tasks/task-store.md` |
@@ -155,7 +155,7 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 | Preflight diagnostics | `cyclopsctl doctor`, `src/cyclopsctl/doctor.py`, `docs/cli/doctor-cli.md` |
 | Install scripts | `install.ps1`, `install.sh`, `src/cyclopsctl/installer.py` |
 | Interactive launch setup | `cyclopsctl` / `launch`, `src/cyclopsctl/launcher.py`, `docs/cli/launch-cli.md` |
-| Launch PRD change / new tag | `src/cyclopsctl/project_setup.py` (`handle_launch_prd_change`), `src/cyclopsctl/launcher.py`, `docs/cli/launch-prd-change.md` |
+| Launch PRD change / new tag (path-aware `--prd`, phase continuation, bootstrap guard) | `src/cyclopsctl/project_setup.py` (`handle_launch_prd_change`, `prd_source_changed`), `src/cyclopsctl/bootstrap.py` (`_guard_destructive_reparse`), `src/cyclopsctl/launcher.py` (`format_phase_complete_hint`), `docs/cli/launch-prd-change.md` |
 | Model inspection CLI | `cyclopsctl models`, `docs/cli/model-inspection-cli.md` |
 | Complexity routing | `src/cyclopsctl/routing.py`, `docs/runtime/model-routing.md` |
 | Agent create/send/wait | `src/cyclopsctl/runner.py`, `docs/runtime/agent-session.md` |

@@ -44,6 +44,45 @@ class BootstrapError(RuntimeError):
     """Invalid bootstrap inputs or pipeline failure."""
 
 
+def _guard_destructive_reparse(config: "BootstrapConfig") -> None:
+    """
+    Refuse a destructive re-parse that would overwrite an existing task list.
+
+    When the PRD differs (by path or content) from the last parse and tasks
+    already exist in the target tag, replacing them would discard finished work.
+    Direct the user to the non-destructive options instead.
+    """
+    # Lazy import: project_setup imports from this module.
+    from cyclopsctl.project_setup import (
+        DEFAULT_TAG,
+        load_last_parsed_prd,
+        prd_source_changed,
+        tasks_exist_in_tag,
+    )
+
+    last = load_last_parsed_prd(config.project_root)
+    if last is None:
+        return
+    effective_tag = config.tag or last.tag or DEFAULT_TAG
+    if not tasks_exist_in_tag(config.project_root, tag=effective_tag):
+        return
+    prd_path = resolve_prd_path(config)
+    if not prd_source_changed(config.project_root, prd_path, last=last):
+        return
+
+    try:
+        prd_display = prd_path.relative_to(config.project_root).as_posix()
+    except ValueError:
+        prd_display = prd_path.name
+    raise BootstrapError(
+        f"PRD differs from the last parse and tasks already exist in tag "
+        f"{effective_tag!r}. Re-parsing would replace them. Run "
+        f"`cyclopsctl launch --prd {prd_display}` to start a new phase tag "
+        f"(keeps history), pass `--tag <name>` to target a fresh tag, or "
+        f"`--append` to add to the existing queue."
+    )
+
+
 @dataclass(frozen=True)
 class BootstrapConfig:
     """Validated configuration for ``cyclopsctl bootstrap``."""
@@ -303,6 +342,8 @@ def run_bootstrap(
     resolved_backend = backend or resolve_bootstrap_backend(config)
     try:
         if not config.sync_handover_only:
+            if not config.append:
+                _guard_destructive_reparse(config)
             if not project_tasks_ready(config.project_root):
                 resolved_backend.init_project(config.project_root)
             prd_path = resolve_prd_path(config)
