@@ -8,7 +8,7 @@ Cyclopsctl is a lightweight **Cursor task orchestrator**: a Python CLI that sequ
 
 **Runtime orchestration, not autonomous planning.** The orchestrator sequences agent runs, waits for completion, and **fails closed** when handovers do not advance (no silent re-runs of the same task). Task planning, documentation, and handover text stay in Markdown prompt files and a native queue under `.cyclopsctl/` — not inside the CLI.
 
-**Who it is for:** developers running multi-task Cursor workflows who want file-based continuity (`current-handover-prompt.md`, `ai-context.md`) and a reliable **implement → update** orchestrator without manually chaining Cursor sessions.
+**Who it is for:** Anyone building software with Cursor — solo developers, small teams, or anyone who wants to turn a solid **PRD** into a working application. Cyclopsctl sequences **implement → update** cycles with handover verification so agents can build complex systems end-to-end with minimal interruption. File-based continuity (`current-handover-prompt.md`, `ai-context.md`) keeps context across sessions without manually chaining Cursor runs.
 
 The codebase is **100% AI-generated** (Python, docs, and config), built with the same [AI-assisted workflow](https://github.com/OlaProeis/Ferrite/blob/master/docs/ai-workflow/ai-development-workflow.md) used for [Ferrite](https://github.com/OlaProeis/Ferrite). Human work is product direction, testing, and orchestration.
 
@@ -20,9 +20,15 @@ The default path needs **one install** (Python package) and **one API key** (`CU
 
 ### 1. Install
 
-Pick one path. All require **Python 3.10+** only.
+Requires **Python 3.10+**.
 
-**Windows (recommended):**
+**Recommended (install from GitHub, no clone):**
+
+```bash
+pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git"
+```
+
+**Windows:**
 
 ```powershell
 .\install.ps1
@@ -32,20 +38,6 @@ Pick one path. All require **Python 3.10+** only.
 
 ```bash
 ./install.sh
-```
-
-**PyPI:**
-
-```bash
-pip install cyclopsctl
-# or isolated global install
-pipx install cyclopsctl
-```
-
-**Git (one line, no clone):**
-
-```bash
-pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git"
 ```
 
 Verify:
@@ -68,19 +60,9 @@ cyclopsctl init
 cyclopsctl launch    # same as bare `cyclopsctl`
 ```
 
-That is the full default path — no separate bootstrap step, profile flag, or doctor run required.
-
 **`cyclopsctl init`** scaffolds `cyclopsctl.toml` and workflow files, parses `prd.md` into the native task queue, runs complexity analysis, and syncs the first handover when prerequisites are met.
 
 **`cyclopsctl launch`** (also the default when you run bare **`cyclopsctl`**) runs preflight checks, shows queue status, lets you pick cycle count and options, then starts implement → update cycles.
-
-Optional extras (not part of the default path):
-
-| Command | When |
-|---------|------|
-| `cyclopsctl doctor` | Read-only diagnostics any time; launch already runs checks before a run |
-| `cyclopsctl bootstrap --from-prd prd.md` | Re-parse a PRD without a full init, or if you added `prd.md` after an attach-only setup |
-| `cyclopsctl init --profile solo-default` | Seed named routing defaults in `cyclopsctl.toml` (power user) |
 
 ---
 
