@@ -61,51 +61,40 @@ Copy **`.env.example`** to **`.env`** in the target project (or export the varia
 
 ### 2. New project
 
-Run these in an **empty or new repository** (not the cyclopsctl dev repo):
+In your project repo (not this dev repo), add **`CURSOR_API_KEY`** to **`.env`** and write **`prd.md`**, then:
 
 ```bash
-mkdir my-project && cd my-project
-git init
-
-# Scaffold config, workflow stubs, native tasks, and first handover
-cyclopsctl init --profile solo-default --yes
-
-# Add your Cursor key and a PRD
-# .env: CURSOR_API_KEY=...
-# prd.md: product requirements
-
-# If init did not parse the PRD yet (greenfield without prd.md), bootstrap once:
-cyclopsctl bootstrap --from-prd prd.md --with-workflow
-
-# Preflight, then interactive run setup
-cyclopsctl doctor
-cyclopsctl launch
+cyclopsctl init
+cyclopsctl launch    # same as bare `cyclopsctl`
 ```
 
-`cyclopsctl init` runs parse-prd and complexity analysis when `prd.md` exists and no tasks are present — using the Cursor SDK and your `CURSOR_API_KEY` only.
+That is the full default path — no separate bootstrap step, profile flag, or doctor run required.
 
-`cyclopsctl launch` (also the default `cyclopsctl` command) runs diagnostics, shows queue status, lets you pick cycle count and options, then spawns `cyclopsctl run`.
+**`cyclopsctl init`** scaffolds `cyclopsctl.toml` and workflow files, parses `prd.md` into the native task queue, runs complexity analysis, and syncs the first handover when prerequisites are met.
+
+**`cyclopsctl launch`** (also the default when you run bare **`cyclopsctl`**) runs preflight checks, shows queue status, lets you pick cycle count and options, then starts implement → update cycles.
+
+Optional extras (not part of the default path):
+
+| Command | When |
+|---------|------|
+| `cyclopsctl doctor` | Read-only diagnostics any time; launch already runs checks before a run |
+| `cyclopsctl bootstrap --from-prd prd.md` | Re-parse a PRD without a full init, or if you added `prd.md` after an attach-only setup |
+| `cyclopsctl init --profile solo-default` | Seed named routing defaults in `cyclopsctl.toml` (power user) |
 
 ---
 
-### 3. Existing project or new PRD
-
-For a repo that already has workflow files and a task queue:
+### 3. Existing project
 
 ```bash
-cd /path/to/existing-project
-
-# First time only — skips files that already exist
-cyclopsctl init
-
-# After PRD changes or when tasks need refreshing
-cyclopsctl bootstrap --from-prd prd.md
-
-# Or let launch detect PRD changes and offer parse/analyze/sync
+cd /path/to/your-project
+cyclopsctl init      # idempotent — repairs and catches up when needed
 cyclopsctl launch
 ```
 
-If `current-handover-prompt.md` already has `# Task ID: <n>` and tasks are pending, go straight to **`cyclopsctl launch`** or **`cyclopsctl run`**.
+Already initialized with pending tasks? **`cyclopsctl launch`** alone is enough.
+
+**PRD changed?** **`launch`** can detect that and offer to re-parse; or run **`cyclopsctl bootstrap --from-prd prd.md`** explicitly.
 
 Most commands default to the **current working directory** as the project root. Run `cyclopsctl doctor` and `cyclopsctl status` from inside your project without passing `--project-root`.
 
@@ -116,11 +105,12 @@ Most commands default to the **current working directory** as the project root. 
 | The orchestrator **does** | The orchestrator **does not** |
 |---------------------------|-------------------------------|
 | Run **implement → update** cycles with handover verification | Plan tasks or edit `tasks.json` during cycles |
-| **`init`** scaffold and **`bootstrap`** PRD → native tasks pipeline | Rewrite handover templates |
+| **`init`** — scaffold, PRD parse, analyze, and handover sync in one step | Rewrite handover templates |
 | Interactive **`launch`** and direct **`run`** | Choose the next task in handover files (update agent does) |
 | Route models from the complexity report | Manage nested task hierarchies |
 | Inject `ai-context.md` into implementation prompts | Replace the update agent's handover or doc duties |
 | Preflight via **`doctor`**, Rich dashboard, resume history | |
+| **`bootstrap`** — optional explicit PRD re-parse | |
 
 Workflow rules live in your prompt files. The update agent marks tasks done, updates docs, and prepares the next handover.
 
@@ -131,7 +121,7 @@ Workflow rules live in your prompt files. The update agent marks tasks done, upd
 - **Python 3.10+**
 - **`CURSOR_API_KEY`** — project-root `.env` or environment (auto-loaded; `--no-env` to skip)
 - **`cursor-sdk`** — installed with this package
-- Target repository with handover templates (`current-handover-prompt.md`, `update-handover-prompt.md`) and `ai-context.md` (created by `init` / `bootstrap --with-workflow`)
+- Target repository with **`prd.md`**, **`CURSOR_API_KEY`**, and handover templates (`current-handover-prompt.md`, `update-handover-prompt.md`) and `ai-context.md` — the latter three are created by **`init`** when missing
 
 On **Windows**, the cyclopsctl bootstraps the Cursor SDK bridge automatically when needed.
 

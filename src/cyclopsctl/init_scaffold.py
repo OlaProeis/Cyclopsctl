@@ -518,16 +518,13 @@ def run_init_scaffold(
 
 def format_init_checklist() -> str:
     """Human-readable next steps after a successful init."""
-    lines = [
-        "Next steps:",
-        "  1. Add CURSOR_API_KEY to .env in the project root",
-        "  2. Write or copy prd.md",
-        "  3. Run `cyclopsctl bootstrap` to parse prd.md and sync handover",
-    ]
-    lines.extend(
+    return "\n".join(
         [
-            "  4. Run `cyclopsctl doctor`",
-            "  5. Run `cyclopsctl run` or `cyclopsctl launch`",
+            "Next steps:",
+            "  1. Ensure `.env` has CURSOR_API_KEY and `prd.md` exists (required before first init on greenfield repos)",
+            "  2. Run `cyclopsctl init`",
+            "  3. Run `cyclopsctl launch` (or bare `cyclopsctl`)",
+            "",
+            "Optional: `cyclopsctl doctor` for read-only checks; `cyclopsctl bootstrap` to re-parse a PRD.",
         ]
     )
-    return "\n".join(lines)
