@@ -16,6 +16,7 @@ from cyclopsctl.tui import (
     AgentPlanItem,
     AgentPlanItemStatus,
     AgentPlanState,
+    DEFAULT_ACTIVITY_MAX_VISUAL_LINES,
     RichCycleLogger,
     RunDashboardState,
     StepStatus,
@@ -30,6 +31,7 @@ from cyclopsctl.tui import (
     format_queue_strip_line,
     managed_cycle_display,
     plan_callback_for_logger,
+    render_activity_visual_lines,
     render_agent_plan_section,
     render_dashboard,
     render_launch_menu,
@@ -65,10 +67,13 @@ def test_managed_cycle_display_tty_yields_rich_logger():
     mock_live.__exit__ = MagicMock(return_value=False)
 
     with patch.object(sys.stderr, "isatty", return_value=True):
-        with patch("cyclopsctl.tui.Live", return_value=mock_live):
+        with patch("cyclopsctl.tui.Live", return_value=mock_live) as live_ctor:
             with managed_cycle_display(plain=False) as logger:
                 assert isinstance(logger, RichCycleLogger)
-                mock_live.update.assert_not_called()
+                mock_live.refresh.assert_not_called()
+            live_ctor.assert_called_once()
+            assert live_ctor.call_args.kwargs["auto_refresh"] is False
+            assert live_ctor.call_args.kwargs["get_renderable"] is not None
 
 
 def test_managed_cycle_display_interrupt_stops_live_without_leaving_running_steps():
@@ -392,6 +397,23 @@ def test_render_dashboard_wraps_long_prose_within_terminal_width():
 
     assert len(visual_lines) <= 4
     assert all(len(line) <= activity_panel_content_width(120) for line in visual_lines)
+
+
+def test_render_activity_visual_lines_keeps_fixed_height():
+    width = activity_panel_content_width(120)
+    prose = " ".join(["word"] * 80)
+    visual_lines = render_activity_visual_lines([prose], width=width)
+
+    assert len(visual_lines) == DEFAULT_ACTIVITY_MAX_VISUAL_LINES
+    assert all(len(line) <= width for line in visual_lines if line)
+
+
+def test_render_activity_visual_lines_preserves_tool_lines():
+    width = activity_panel_content_width(120)
+    tool_line = "Read · runner.py · open file"
+    visual_lines = render_activity_visual_lines([tool_line], width=width)
+
+    assert tool_line in visual_lines
 
 
 def test_rich_logger_clears_activity_on_cycle_start():

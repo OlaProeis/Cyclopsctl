@@ -10,6 +10,8 @@ Each cycle is one task. The orchestrator picks the task, routes the right model 
 
 **Who it's for:** Solo developers and small teams building with Cursor who want to turn a solid PRD into working software with minimal manual chaining of agent runs. File-based continuity (`current-handover-prompt.md`, `ai-context.md`) keeps context intact across sessions.
 
+![Live dashboard during a cyclopsctl run](assets/screenshot.png)
+
 > The codebase is 100% AI-generated (Python, docs, and config), built with the same [AI-assisted workflow](https://github.com/OlaProeis/Ferrite/blob/master/docs/ai-workflow/ai-development-workflow.md) used for [Ferrite](https://github.com/OlaProeis/Ferrite).
 
 ---

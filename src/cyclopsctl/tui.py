@@ -33,6 +33,7 @@ from cyclopsctl.runner import (
 from cyclopsctl.tasks.types import NextTaskResult
 
 DEFAULT_ACTIVITY_BUFFER_SIZE = 8
+DEFAULT_ACTIVITY_MAX_VISUAL_LINES = 10
 DEFAULT_AGENT_PLAN_MAX_VISIBLE = 12
 DEFAULT_QUEUE_STRIP_UPCOMING_CAP = 5
 ACTIVITY_REFRESH_INTERVAL_SECONDS = 0.25
@@ -546,6 +547,26 @@ def format_activity_for_display(line: str, *, width: int) -> str:
     return line
 
 
+def render_activity_visual_lines(
+    activity_lines: Sequence[str],
+    *,
+    width: int,
+    max_visual_lines: int = DEFAULT_ACTIVITY_MAX_VISUAL_LINES,
+) -> list[str]:
+    """Wrap activity entries and crop to a fixed visual height for stable Live layout."""
+    if max_visual_lines <= 0:
+        return []
+    wrapped: list[str] = []
+    for line in activity_lines:
+        formatted = format_activity_for_display(line, width=width)
+        wrapped.extend(formatted.splitlines() or [""])
+    if len(wrapped) > max_visual_lines:
+        wrapped = wrapped[-max_visual_lines:]
+    while len(wrapped) < max_visual_lines:
+        wrapped.append("")
+    return wrapped
+
+
 def render_agent_plan_section(
     state: AgentPlanState,
     *,
@@ -650,8 +671,11 @@ def render_dashboard(
     if state.activity_lines:
         activity_width = activity_panel_content_width(console_width or 80)
         activity = Text()
-        for line in state.activity_lines:
-            activity.append(format_activity_for_display(line, width=activity_width))
+        for visual_line in render_activity_visual_lines(
+            state.activity_lines,
+            width=activity_width,
+        ):
+            activity.append(visual_line)
             activity.append("\n")
         sections.extend(
             [
@@ -715,16 +739,17 @@ def managed_cycle_display(
     if interrupt is not None:
         interrupt.add_callback(stop_live)
 
+    def dashboard_renderable() -> RenderableType:
+        return render_dashboard(state, console_width=console.size.width)
+
     with Live(
-        render_dashboard(state, console_width=console.size.width),
         console=console,
-        refresh_per_second=4,
+        get_renderable=dashboard_renderable,
+        auto_refresh=False,
         transient=False,
     ) as live_ctx:
         live = live_ctx
-        rich_logger.on_update = lambda: live_ctx.update(
-            render_dashboard(state, console_width=console.size.width),
-        )
+        rich_logger.on_update = live_ctx.refresh
         try:
             yield rich_logger
         finally:
