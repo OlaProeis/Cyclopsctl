@@ -1,12 +1,12 @@
-# Cyclopsctl — Cursor Task Orchestrator
+# Cyclopsctl: Cursor Task Orchestrator
 
 [![GitHub](https://img.shields.io/badge/GitHub-OlaProeis%2FCyclopsctl-blue?logo=github)](https://github.com/OlaProeis/Cyclopsctl)
 
-**Run Cursor agents in structured cycles from your terminal — implement, verify, repeat.**
+**Run Cursor agents in structured cycles from your terminal. Implement, verify, repeat.**
 
 Cyclopsctl is a Python CLI that sequences [Cursor](https://cursor.com) agent runs to execute tasks from a PRD end-to-end. You write a product requirements doc (`prd.md`), run `cyclopsctl init`, and let the orchestrator drive implement → update → verify cycles until the queue is empty.
 
-Each cycle is one task. The orchestrator picks the task, routes the right model based on complexity, runs a **two-phase workflow** (implement + update in the same agent session), then verifies the handover file advanced before moving on. It **fails closed** — if the handover didn't change, the run stops rather than silently repeating the same task.
+Each cycle is one task. The orchestrator picks the task, routes the right model based on complexity, runs a **two-phase workflow** (implement + update in the same agent session), then verifies the handover file advanced before moving on. It **fails closed**: if the handover didn't change, the run stops rather than silently repeating the same task.
 
 **Who it's for:** Solo developers and small teams building with Cursor who want to turn a solid PRD into working software with minimal manual chaining of agent runs. File-based continuity (`current-handover-prompt.md`, `ai-context.md`) keeps context intact across sessions.
 
@@ -14,15 +14,21 @@ Each cycle is one task. The orchestrator picks the task, routes the right model 
 
 ---
 
+## Tips for best results
+
+**Write a detailed PRD.** The quality of your output depends heavily on the quality of your `prd.md`. Vague requirements produce vague tasks; detailed requirements produce precise, actionable tasks. We recommend drafting your PRD with Opus before running cyclopsctl: use it interactively to think through features, edge cases, tech stack choices, and scope. The better the PRD, the better the parsed tasks, the better the results. See [`prd.example.md`](prd.example.md) for a full annotated example showing what to include and why.
+
+**Build in phases, not all at once.** Don't try to build a large application in a single PRD. Start with a focused v1 scope, build it, validate it, then write a second PRD for the next phase. Phase 2 PRDs are a great place to include bug fixes, refinements, and new features based on what you learned from phase 1. Cyclopsctl supports multi-phase builds natively with tags, so each phase gets its own task queue while keeping previous phase history intact.
+
+---
+
 ## How it works
-
-![Cyclopsctl workflow overview](docs/images/workflow-overview.png)
-
-You start with a `prd.md`. `cyclopsctl init` parses it into a task queue, scores each task for complexity, and prepares the first handover file. `cyclopsctl launch` then drives the loop: for each task, a new Cursor agent implements it, the same agent session handles the update (marks the task done and prepares the next handover), and the orchestrator verifies progress before continuing.
 
 ![One cycle in detail](docs/images/cycle-detail.png)
 
-The **handover file** (`current-handover-prompt.md`) is the contract between cycles — it carries the task context forward. The orchestrator snapshots it before the update phase and checks that the Task ID and content actually changed. If they didn't, the run fails rather than silently looping.
+You start with a `prd.md`. `cyclopsctl init` parses it into a task queue, scores each task for complexity, and prepares the first handover file. `cyclopsctl launch` then drives the loop: for each task, a new Cursor agent implements it, the same agent session handles the update (marks the task done and prepares the next handover), and the orchestrator verifies progress before continuing.
+
+The **handover file** (`current-handover-prompt.md`) is the contract between cycles; it carries the task context forward. The orchestrator snapshots it before the update phase and checks that the Task ID and content actually changed. If they didn't, the run fails rather than silently looping.
 
 ---
 
@@ -32,7 +38,7 @@ Requires **Python 3.10+** and a `CURSOR_API_KEY`.
 
 ### 1. Install
 
-**From GitHub (recommended — no clone needed):**
+**From GitHub (no clone needed):**
 
 ```bash
 pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git"
@@ -75,7 +81,7 @@ cyclopsctl launch    # start the implement → update cycles
 
 ```bash
 cd /path/to/your-project
-cyclopsctl init      # idempotent — repairs and catches up as needed
+cyclopsctl init      # idempotent, repairs and catches up as needed
 cyclopsctl launch
 ```
 
@@ -88,12 +94,12 @@ If the project is already initialized and has pending tasks, `launch` alone is e
 | The orchestrator **does** | The orchestrator **does not** |
 |---------------------------|-------------------------------|
 | Run implement → update cycles with handover verification | Plan tasks or edit `tasks.json` during cycles |
-| `init` — scaffold, PRD parse, complexity scoring, handover sync | Rewrite handover templates |
+| `init`: scaffold, PRD parse, complexity scoring, handover sync | Rewrite handover templates |
 | Interactive `launch` and direct `run` | Choose the next task (the update agent does that) |
 | Route models by complexity score | Manage nested task hierarchies |
 | Inject `ai-context.md` into implementation prompts | Replace the update agent's handover or doc duties |
 | Preflight via `doctor`, Rich dashboard, resume history | |
-| `bootstrap` — explicit PRD re-parse when needed | |
+| `bootstrap`: explicit PRD re-parse when needed | |
 
 Task planning and workflow rules live in your prompt files. The update agent marks tasks done, updates docs, and writes the next handover.
 
@@ -119,12 +125,12 @@ Task state lives under `.cyclopsctl/tasks/` and `.cyclopsctl/reports/`. Use `cyc
 | Command | Description |
 |---------|-------------|
 | `cyclopsctl` | **Default:** interactive launcher (`launch`) |
-| `cyclopsctl launch` | Preflight + Rich menu → spawn `run` |
+| `cyclopsctl launch` | Preflight + Rich menu, spawn `run` |
 | `cyclopsctl init` | Scaffold `cyclopsctl.toml`, workflow stubs, `.gitignore` |
 | `cyclopsctl bootstrap` | PRD → parse → analyze → sync handover |
 | `cyclopsctl run` | Run N verified implement → update cycles |
 | `cyclopsctl doctor` / `check` | Preflight diagnostics |
-| `cyclopsctl tasks` | Task queue CRUD — `list`, `list pending` / `done`, `show`, `next`, `set-status` |
+| `cyclopsctl tasks` | Task queue CRUD: `list`, `list pending` / `done`, `show`, `next`, `set-status` |
 | `cyclopsctl status` | Crash-recovery state and run history summary |
 | `cyclopsctl models` | List Cursor models and routing preset availability |
 
@@ -163,7 +169,7 @@ Shared flags on most commands: `--no-env`, `--config`, `--project-root` (default
 | `--tag NAME` | Task tag context |
 | `--task-source MODE` | `handover` (default) or `sequential` |
 | `--task-id N` | Pin the next cycle to a specific pending task |
-| `--strict-handover` | Fail when handover Task ID ≠ selected task |
+| `--strict-handover` | Fail when handover Task ID differs from selected task |
 | `--resume` | Skip completed parent tasks from run history |
 | `--fresh` | Force first-prompt bootstrap; ignore ready handover |
 | `--plain` | Disable Rich dashboard; plain text logs |
@@ -178,7 +184,7 @@ Inspect and update the native queue under `.cyclopsctl/tasks/`. Run from the pro
 
 | Command | Description |
 |---------|-------------|
-| `cyclopsctl tasks list` | All tasks — Rich table with ID, title, status, complexity, dependencies |
+| `cyclopsctl tasks list` | All tasks: Rich table with ID, title, status, complexity, dependencies |
 | `cyclopsctl tasks list pending` | Non-done tasks |
 | `cyclopsctl tasks list done` | Completed tasks only |
 | `cyclopsctl tasks list <status>` | Filter by status (`in-progress`, `review`, `cancelled`, `blocked`, `deferred`) |
@@ -193,7 +199,7 @@ Shared flags: `--project-root`, `--tag`, `--format json|plain`. Full reference: 
 ### Tags, phases, and profiles
 
 - **Tags** group tasks by phase. Pass `--tag NAME` on `run` / `launch`, or set `tag = "..."` in `cyclopsctl.toml`. Inspect and switch with `cyclopsctl tasks tags` / `cyclopsctl tasks use-tag <name>`.
-- **Multi-phase PRDs:** each PRD/phase maps to its own tag. Start the next phase with `cyclopsctl launch --prd prd-phase2.md` — launch parses it into a fresh tag, syncs a clean handover, and keeps the previous phase's tasks as history. See [`docs/cli/launch-prd-change.md`](docs/cli/launch-prd-change.md).
+- **Multi-phase PRDs:** each PRD/phase maps to its own tag. Start the next phase with `cyclopsctl launch --prd prd-phase2.md` and launch parses it into a fresh tag, syncs a clean handover, and keeps the previous phase's tasks as history. See [`docs/cli/launch-prd-change.md`](docs/cli/launch-prd-change.md).
 - **Profiles:** named `[profile.solo-default]` tables in `cyclopsctl.toml`; seed via `cyclopsctl init --profile NAME`. CLI flags override profile values.
 
 ### Model routing
@@ -214,7 +220,7 @@ Optional `[routing]` in TOML sets score bands, `composer_tier`, `opus_enabled`, 
 | `0` | Completed cycles, empty queue stop, or successful doctor/status |
 | `1` | Startup / configuration failure |
 | `2` | Agent run failure or handover verification failure |
-| `130` | Interrupted (Ctrl+C) — agent closed, state preserved |
+| `130` | Interrupted (Ctrl+C): agent closed, state preserved |
 
 ---
 
@@ -268,11 +274,11 @@ For manual validation on a fresh directory or an existing repository, follow [`d
 
 ## Design philosophy
 
-1. **Orchestrate runs, not plans** — Sequence agent cycles, routing, and verification; task content lives in prompts and the native queue.
-2. **Scenario-first adoption** — `init` and `launch` are the default path; `run` and flags are there for automation and power users.
-3. **File-based continuity** — Prompts, handovers, and `ai-context.md` are the workflow contract between sessions.
-4. **Two-phase discipline** — Implementation agents implement; update agents mark done and advance handovers.
-5. **Fail closed on stuck handovers** — Better to stop than to silently loop the same task.
+1. **Orchestrate runs, not plans.** Sequence agent cycles, routing, and verification; task content lives in prompts and the native queue.
+2. **Scenario-first adoption.** `init` and `launch` are the default path; `run` and flags are there for automation and power users.
+3. **File-based continuity.** Prompts, handovers, and `ai-context.md` are the workflow contract between sessions.
+4. **Two-phase discipline.** Implementation agents implement; update agents mark done and advance handovers.
+5. **Fail closed on stuck handovers.** Better to stop than to silently loop the same task.
 
 Full product requirements: [`docs/prd.md`](docs/prd.md).
 
@@ -280,4 +286,4 @@ Full product requirements: [`docs/prd.md`](docs/prd.md).
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT, see [`LICENSE`](LICENSE).
