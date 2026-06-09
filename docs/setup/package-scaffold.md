@@ -10,7 +10,7 @@ The cyclopsctl ships as installable package `cyclopsctl` under `src/cyclopsctl/`
 
 ## Install and smoke check
 
-**Global install (no clone):** see `package-distribution.md` — run `install.ps1` (Windows) or `install.sh` (macOS/Linux), or `pip install cyclopsctl`.
+**Global install (no clone):** see `package-distribution.md` — run `install.ps1` (Windows) or `install.sh` (macOS/Linux), or `pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git"` (git is the distribution channel; not on PyPI).
 
 **Development (this repo):**
 

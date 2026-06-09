@@ -62,3 +62,28 @@ def test_wheel_contains_license_and_version(tmp_path):
     license_value = metadata.get("License") or metadata.get("License-Expression")
     assert license_value is not None
     assert "MIT" in license_value
+
+
+def test_wheel_contains_prd_example_template(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+
+    build = subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", ".", "-w", str(dist_dir), "--no-deps"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if build.returncode != 0:
+        pytest.skip(f"wheel build unavailable in this environment: {build.stderr}")
+
+    wheel_path = next(dist_dir.glob("*.whl"))
+    with zipfile.ZipFile(wheel_path) as zf:
+        bundled = [
+            name
+            for name in zf.namelist()
+            if name.endswith("templates/prd.example.md")
+        ]
+    assert bundled, "wheel must bundle templates/prd.example.md for pip installs"

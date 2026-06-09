@@ -22,6 +22,7 @@ SCAFFOLD_TEMPLATE_MAP: dict[str, str] = {
     "ai-context.md": "ai-context.md",
     "current-handover-prompt.md": "current-handover-prompt.md",
     "update-handover-prompt.md": "update-handover-prompt.md",
+    "prd.example.md": "prd.example.md",
 }
 
 GITIGNORE_ENTRIES: tuple[str, ...] = (
@@ -521,7 +522,7 @@ def format_init_checklist() -> str:
     return "\n".join(
         [
             "Next steps:",
-            "  1. Ensure `.env` has CURSOR_API_KEY and `prd.md` exists (required before first init on greenfield repos)",
+            "  1. Ensure `.env` has CURSOR_API_KEY and `prd.md` exists (see `prd.example.md` for structure and detail level)",
             "  2. Run `cyclopsctl init`",
             "  3. Run `cyclopsctl launch` (or bare `cyclopsctl`)",
             "",

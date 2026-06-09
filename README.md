@@ -68,14 +68,14 @@ Copy `.env.example` to `.env` in your project and set `CURSOR_API_KEY`. Cyclopsc
 
 ### 2. New project
 
-In your project repo, write a `prd.md` describing what you want to build, then:
+In your project repo, write a `prd.md` describing what you want to build (see `prd.example.md` for structure — `init` copies this annotated example into your project), then:
 
 ```bash
 cyclopsctl init      # parse PRD → task queue → first handover
 cyclopsctl launch    # start the implement → update cycles
 ```
 
-`init` scaffolds `cyclopsctl.toml`, creates workflow files, parses `prd.md` into the native task queue, runs complexity scoring, and writes the first handover. `launch` runs preflight checks, shows queue status, lets you confirm options, and starts the cycles.
+`init` scaffolds `cyclopsctl.toml`, workflow files, and `prd.example.md`, parses `prd.md` into the native task queue, runs complexity scoring, and writes the first handover. `launch` runs preflight checks, shows queue status, lets you confirm options, and starts the cycles.
 
 ---
 

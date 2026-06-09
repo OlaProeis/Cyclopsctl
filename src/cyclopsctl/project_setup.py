@@ -95,8 +95,9 @@ PRD_CONTINUE_CONFIRM_MESSAGE = (
 )
 
 MISSING_PRD_EXISTING_REPO_SUFFIX = (
-    " Add prd.md (or use --from-prd) to bootstrap tasks from your PRD, or run "
-    "`cyclopsctl init --attach --yes` if an existing task queue is present."
+    " Add prd.md (or use --from-prd) to bootstrap tasks from your PRD; see "
+    "prd.example.md for what to include, or run `cyclopsctl init --attach --yes` "
+    "if an existing task queue is present."
 )
 
 PRD_CHANGED_NO_NEW_TAG_MESSAGE = (

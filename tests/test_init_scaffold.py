@@ -29,6 +29,7 @@ def test_discover_scaffold_plan_lists_config_templates_and_gitignore(greenfield_
     assert "ai-context.md" in planned
     assert "current-handover-prompt.md" in planned
     assert "update-handover-prompt.md" in planned
+    assert "prd.example.md" in planned
     assert ".gitignore" in planned
 
 
@@ -51,8 +52,10 @@ def test_run_init_scaffold_writes_config_and_templates(greenfield_root: Path):
     assert (greenfield_root / "ai-context.md").is_file()
     assert (greenfield_root / "current-handover-prompt.md").is_file()
     assert (greenfield_root / "update-handover-prompt.md").is_file()
+    assert (greenfield_root / "prd.example.md").is_file()
     assert "cyclopsctl.toml" in result.written_paths
     assert "ai-context.md" in result.written_paths
+    assert "prd.example.md" in result.written_paths
 
 
 def test_template_content_smoke_checks(greenfield_root: Path):
@@ -70,6 +73,14 @@ def test_template_content_smoke_checks(greenfield_root: Path):
     assert "# Update Handover Instructions" in update
     assert "cyclopsctl tasks set-status" in update
     assert "cyclopsctl tasks" in ai_context
+
+
+def test_prd_example_template_is_bundled_reference(greenfield_root: Path):
+    run_init_scaffold(project_root=greenfield_root)
+    example = (greenfield_root / "prd.example.md").read_text(encoding="utf-8")
+    assert "# PRD Example:" in example
+    assert "Use it as a template when writing your own `prd.md`" in example
+    assert "## Tech stack" in example
 
 
 def test_gitignore_inserts_orchestrator_entries(greenfield_root: Path):
