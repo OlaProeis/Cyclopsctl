@@ -15,6 +15,7 @@ from cyclopsctl.models import (
     ModelListingError,
     _list_cursor_models,
     detect_composer,
+    detect_fable_high_thinking,
     detect_opus_high_thinking,
     detect_opus_max,
     detect_sonnet_max,
@@ -31,6 +32,7 @@ from cyclopsctl.tasks.models import (
 BOOTSTRAP_PRESET_AUTO = "auto"
 BOOTSTRAP_PRESET_COMPOSER = "composer"
 BOOTSTRAP_PRESET_SONNET = "sonnet"
+BOOTSTRAP_PRESET_FABLE = "fable-high-thinking"
 BOOTSTRAP_PRESET_OPUS = "opus-high-thinking"
 BOOTSTRAP_PRESET_SONNET_MAX = "sonnet-max"
 BOOTSTRAP_PRESET_OPUS_MAX = "opus-max"
@@ -53,16 +55,21 @@ _BOOTSTRAP_PRESETS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "4",
+        BOOTSTRAP_PRESET_FABLE,
+        "Fable 5 — high-thinking preset for strong decomposition (API credits)",
+    ),
+    (
+        "5",
         BOOTSTRAP_PRESET_OPUS,
         "Opus 4.8 — deepest decomposition for large, technical PRDs (higher API credits)",
     ),
     (
-        "5",
+        "6",
         BOOTSTRAP_PRESET_SONNET_MAX,
         "Sonnet Max — extended context for very long PRDs (premium API credits)",
     ),
     (
-        "6",
+        "7",
         BOOTSTRAP_PRESET_OPUS_MAX,
         "Opus 4.8 Max — highest quality for the most complex PRDs (premium API credits)",
     ),
@@ -75,6 +82,10 @@ _PRESET_ALIASES: dict[str, str] = {
     "composer": BOOTSTRAP_PRESET_COMPOSER,
     "s": BOOTSTRAP_PRESET_SONNET,
     "sonnet": BOOTSTRAP_PRESET_SONNET,
+    "f": BOOTSTRAP_PRESET_FABLE,
+    "fable": BOOTSTRAP_PRESET_FABLE,
+    "fable-high-thinking": BOOTSTRAP_PRESET_FABLE,
+    "fable-5": BOOTSTRAP_PRESET_FABLE,
     "o": BOOTSTRAP_PRESET_OPUS,
     "opus": BOOTSTRAP_PRESET_OPUS,
     "opus-high-thinking": BOOTSTRAP_PRESET_OPUS,
@@ -94,6 +105,7 @@ _LISTING_PRESETS = frozenset(
         BOOTSTRAP_PRESET_AUTO,
         BOOTSTRAP_PRESET_COMPOSER,
         BOOTSTRAP_PRESET_SONNET,
+        BOOTSTRAP_PRESET_FABLE,
         BOOTSTRAP_PRESET_OPUS,
         BOOTSTRAP_PRESET_SONNET_MAX,
         BOOTSTRAP_PRESET_OPUS_MAX,
@@ -232,7 +244,7 @@ def bootstrap_model_attempt_chain(
     if preset not in _LISTING_PRESETS:
         explicit = ModelSelection(id=preset)
         blob = preset.lower()
-        if "sonnet" in blob:
+        if "sonnet" in blob or "fable" in blob:
             return [explicit, ModelSelection(id=COMPOSER_MODEL_ID)]
         if "opus" in blob:
             return _credit_aware_fallback_chain(
@@ -267,6 +279,10 @@ def bootstrap_model_attempt_chain(
         if sonnet is not None:
             return [sonnet, composer]
         return [composer]
+
+    if preset == BOOTSTRAP_PRESET_FABLE:
+        fable = detect_fable_high_thinking(models) if models else None
+        return _credit_aware_fallback_chain(fable, sonnet, composer=composer)
 
     if preset == BOOTSTRAP_PRESET_OPUS:
         opus = detect_opus_high_thinking(models) if models else None

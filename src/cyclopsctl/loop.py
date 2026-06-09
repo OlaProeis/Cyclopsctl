@@ -56,6 +56,7 @@ from cyclopsctl.runner import (
     should_retry_transient_failure,
     should_retry_with_composer_after_opus_failure,
 )
+from cyclopsctl.sdk_bridge import active_managed_bridge, recover_managed_bridge
 from cyclopsctl.state import RunStateStatus, RunStateTracker
 from cyclopsctl.git_summary import capture_cycle_git_diff_summary, capture_git_head
 from cyclopsctl.transcript_export import write_transcript_sidecar
@@ -761,6 +762,59 @@ def _run_single_cycle(
     )
 
 
+_BRIDGE_CONNECT_FAILURE_HINTS = (
+    "connecterror",
+    "connection refused",
+    "actively refused",
+    "10061",
+)
+
+
+def _is_bridge_connect_failure(exc: AgentRunError) -> bool:
+    """Whether the failure is the local bridge refusing/dropping connections."""
+    message = str(exc).lower()
+    if "bridge request failed" not in message:
+        return False
+    return any(hint in message for hint in _BRIDGE_CONNECT_FAILURE_HINTS)
+
+
+def _recover_bridge_before_retry(
+    config: CyclopsctlConfig,
+    *,
+    exc: AgentRunError,
+    log: CycleLogger,
+    cycle_number: int,
+) -> None:
+    """Relaunch the managed bridge before a retry when it died mid-run.
+
+    The bridge is a plain node.exe process; an orchestrated agent that kills
+    node processes (port cleanup, test teardown) takes the bridge down, and
+    retrying against the dead endpoint can never succeed. Relaunching makes
+    the retry meaningful. No-op when there is no managed bridge (non-Windows
+    or externally supplied endpoint) or when it is still healthy.
+    """
+    bridge = active_managed_bridge()
+    if bridge is None:
+        return
+    bridge_alive = bridge.is_alive()
+    if bridge_alive and not _is_bridge_connect_failure(exc):
+        return
+    log.log_warning(
+        "cursor-sdk-bridge is down; relaunching before retry",
+        cycle_number=cycle_number,
+        bridge_alive=bridge_alive,
+        error=str(exc),
+    )
+    try:
+        recover_managed_bridge(config.project_root)
+    except Exception as bridge_exc:
+        log.log_warning(
+            "Bridge relaunch failed; retrying cycle anyway",
+            cycle_number=cycle_number,
+            error=str(bridge_exc),
+        )
+
+
 def _run_cycle_with_retry(
     config: CyclopsctlConfig,
     *,
@@ -804,6 +858,12 @@ def _run_cycle_with_retry(
                 max_attempts=max_attempts,
             ):
                 raise
+            _recover_bridge_before_retry(
+                config,
+                exc=exc,
+                log=log,
+                cycle_number=cycle_number,
+            )
             delay = retry_delay_seconds(
                 config.retry_backoff_seconds,
                 failed_attempt=attempt,

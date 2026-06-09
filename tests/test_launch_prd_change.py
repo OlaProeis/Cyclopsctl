@@ -266,6 +266,69 @@ def test_changed_prd_runs_tag_pipeline_in_order(
     assert prd_hash_changed(root, root / "prd.md") is False
 
 
+def test_changed_prd_passes_bootstrap_model_to_parse_and_analyze(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "repo"
+    _write_initialized_project(root)
+    (root / "prd.md").write_text("# PRD: Phase 5\n\nUpdated scope.\n", encoding="utf-8")
+
+    captured: dict[str, str | None] = {}
+
+    def fake_parse(
+        self,
+        project_root: Path,
+        prd: Path,
+        *,
+        tag: str | None = None,
+        parse_model: str | None = None,
+        **_kwargs: object,
+    ) -> None:
+        _ = self, project_root, prd, tag
+        captured["parse_model"] = parse_model
+
+    def fake_analyze(
+        self,
+        project_root: Path,
+        *,
+        tag: str | None = None,
+        analyze_model: str | None = None,
+        **_kwargs: object,
+    ) -> None:
+        _ = self, project_root, tag
+        captured["analyze_model"] = analyze_model
+
+    monkeypatch.setattr(
+        "cyclopsctl.tasks.native_backend.NativeTaskBackend.parse_prd",
+        fake_parse,
+    )
+    monkeypatch.setattr(
+        "cyclopsctl.tasks.native_backend.NativeTaskBackend.analyze_complexity",
+        fake_analyze,
+    )
+    monkeypatch.setattr(
+        "cyclopsctl.bootstrap.sync_current_handover",
+        lambda *_a, **_k: None,
+    )
+    config_paths = _launch_config(root)
+
+    handle_launch_prd_change(
+        root,
+        current_handover=config_paths.current_handover,
+        complexity_report=config_paths.complexity_report,
+        ai_context=config_paths.ai_context,
+        assume_yes=True,
+        bootstrap_model="fable-high-thinking",
+        task_backend="native",
+    )
+
+    assert captured == {
+        "parse_model": "fable-high-thinking",
+        "analyze_model": "fable-high-thinking",
+    }
+
+
 def test_changed_prd_forces_analyze_when_prior_report_exists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

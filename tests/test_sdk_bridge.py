@@ -193,6 +193,60 @@ def test_managed_bridge_close_is_idempotent_and_unregisters(monkeypatch):
     bridge.close()  # second call is a no-op, must not raise
 
 
+def test_managed_bridge_is_alive_tracks_process_and_close(monkeypatch):
+    bridge = _hermetic_bridge(monkeypatch)
+    assert bridge.is_alive() is True
+
+    bridge.process._returncode = 1
+    assert bridge.is_alive() is False
+
+
+def test_managed_bridge_is_alive_false_after_close(monkeypatch):
+    bridge = _hermetic_bridge(monkeypatch)
+    bridge.close()
+    assert bridge.is_alive() is False
+
+
+def test_active_managed_bridge_returns_latest_or_none(monkeypatch):
+    from cyclopsctl import sdk_bridge
+
+    assert sdk_bridge.active_managed_bridge() is None
+
+    bridge = _hermetic_bridge(monkeypatch)
+    sdk_bridge._register_active_bridge(bridge)
+    assert sdk_bridge.active_managed_bridge() is bridge
+
+
+def test_recover_managed_bridge_noop_without_active_bridge(tmp_path: Path):
+    from cyclopsctl import sdk_bridge
+
+    assert sdk_bridge.recover_managed_bridge(tmp_path) is None
+
+
+def test_recover_managed_bridge_closes_old_and_relaunches(
+    monkeypatch, tmp_path: Path
+):
+    from cyclopsctl import sdk_bridge
+
+    old = _hermetic_bridge(monkeypatch)
+    sdk_bridge._register_active_bridge(old)
+    replacement = object()
+    launched: list[Path] = []
+
+    def _fake_launch(workspace: Path) -> object:
+        launched.append(workspace)
+        return replacement
+
+    monkeypatch.setattr(sdk_bridge, "launch_bridge_for_windows", _fake_launch)
+
+    result = sdk_bridge.recover_managed_bridge(tmp_path)
+
+    assert result is replacement
+    assert launched == [tmp_path]
+    assert old._closed is True
+    assert old not in sdk_bridge._ACTIVE_BRIDGES
+
+
 def test_atexit_safety_net_closes_open_bridges(monkeypatch):
     from cyclopsctl import sdk_bridge
 
@@ -314,6 +368,22 @@ def test_managed_sdk_bridge_closes_launched_bridge(tmp_path: Path):
             assert bridge is not None
 
     assert len(closed) == 1
+
+
+def test_managed_sdk_bridge_closes_replacement_bridge(tmp_path: Path, monkeypatch):
+    """A bridge relaunched by recovery is closed when the manager exits."""
+    from cyclopsctl import sdk_bridge
+
+    original = _hermetic_bridge(monkeypatch)
+    replacement = _hermetic_bridge(monkeypatch)
+
+    with patch("cyclopsctl.sdk_bridge.ensure_sdk_bridge", return_value=original):
+        with managed_sdk_bridge(tmp_path):
+            sdk_bridge._register_active_bridge(replacement)
+
+    assert original._closed is True
+    assert replacement._closed is True
+    assert sdk_bridge._ACTIVE_BRIDGES == []
 
 
 @pytest.fixture

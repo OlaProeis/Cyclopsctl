@@ -14,6 +14,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -81,6 +82,10 @@ class ManagedBridge:
     client: Any = None
     _closed: bool = field(default=False, repr=False)
 
+    def is_alive(self) -> bool:
+        """Whether the bridge subprocess is still running."""
+        return not self._closed and self.process.poll() is None
+
     def close(self) -> None:
         """Shut down the bridge and clear SDK env overrides (idempotent)."""
         if self._closed:
@@ -107,6 +112,36 @@ class ManagedBridge:
 
 def _register_active_bridge(bridge: ManagedBridge) -> None:
     _ACTIVE_BRIDGES.append(bridge)
+
+
+def active_managed_bridge() -> ManagedBridge | None:
+    """The most recently launched managed bridge that is still open, if any."""
+    return _ACTIVE_BRIDGES[-1] if _ACTIVE_BRIDGES else None
+
+
+def recover_managed_bridge(workspace: Path) -> ManagedBridge | None:
+    """Replace a dead/unreachable managed bridge with a fresh one.
+
+    The bridge runs as a plain ``node.exe`` process; an orchestrated agent
+    that kills node processes (e.g. ``taskkill /F /IM node.exe`` while
+    freeing a dev-server port) takes the bridge down with it, and every
+    later RPC fails with connection-refused. Closing the old handle and
+    relaunching re-points the SDK env vars and default client at the new
+    endpoint, so the next cycle attempt gets a working bridge.
+
+    Returns the new bridge, or ``None`` when there is no managed bridge to
+    recover (non-Windows, or an externally supplied bridge endpoint).
+    """
+    bridge = active_managed_bridge()
+    if bridge is None:
+        return None
+    logger.warning(
+        "Recovering cursor-sdk-bridge (old pid=%s, alive=%s)",
+        bridge.process.pid,
+        bridge.is_alive(),
+    )
+    bridge.close()
+    return launch_bridge_for_windows(workspace)
 
 
 def _unregister_active_bridge(bridge: ManagedBridge) -> None:
@@ -255,12 +290,41 @@ def launch_bridge_for_windows(
                 client=client,
             )
             _register_active_bridge(bridge)
+            _start_stderr_drain(process)
             return bridge
 
         raise SdkBridgeError("Timed out waiting for cursor-sdk-bridge discovery")
     except Exception:
         _terminate_process(process)
         raise
+
+
+def _start_stderr_drain(process: subprocess.Popen[str]) -> None:
+    """Keep reading bridge stderr after discovery on a daemon thread.
+
+    Nothing reads the stderr pipe once discovery finishes; if the bridge logs
+    enough, the OS pipe buffer fills and the node process blocks mid-write,
+    freezing the bridge. Draining also surfaces bridge-side errors in our
+    debug logs instead of losing them.
+    """
+    stderr = process.stderr
+    if stderr is None:
+        return
+
+    def _drain() -> None:
+        try:
+            for line in iter(stderr.readline, ""):
+                text = line.rstrip()
+                if text:
+                    logger.debug("cursor-sdk-bridge: %s", text)
+        except Exception:
+            logger.debug("Bridge stderr drain stopped", exc_info=True)
+
+    threading.Thread(
+        target=_drain,
+        name="cursor-sdk-bridge-stderr",
+        daemon=True,
+    ).start()
 
 
 def ensure_sdk_bridge(
@@ -305,6 +369,11 @@ def managed_sdk_bridge(
     finally:
         if bridge is not None:
             bridge.close()
+            # ``recover_managed_bridge`` may have replaced the bridge we
+            # launched; close any replacement too so node subprocesses do
+            # not linger until the atexit safety net.
+            for replacement in list(_ACTIVE_BRIDGES):
+                replacement.close()
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:

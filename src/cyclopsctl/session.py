@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cursor_sdk import Agent, ModelSelection
+from cursor_sdk import Agent, CursorAgentError, ModelSelection
 
 from cyclopsctl.runner import (
     ActivityCallback,
@@ -92,12 +92,27 @@ class CycleSession:
         return self.update
 
     def close(self) -> None:
+        """Dispose the agent handle (best-effort).
+
+        ``agent.close()`` is a bridge RPC. If the bridge died mid-run the RPC
+        raises ``NetworkError`` (connection refused) — but the local agent
+        process is already gone, so there is nothing left to clean up. Never
+        let a cleanup failure crash a cycle that already completed.
+        """
         if self._agent is None:
             return
-        agent_id = self._agent.agent_id
-        self._agent.close()
+        agent = self._agent
         self._agent = None
-        logger.info("Closed agent %s", agent_id)
+        try:
+            agent.close()
+        except CursorAgentError as exc:
+            logger.warning(
+                "Best-effort close of agent %s failed (bridge unreachable?): %s",
+                agent.agent_id,
+                exc,
+            )
+            return
+        logger.info("Closed agent %s", agent.agent_id)
 
     def __enter__(self) -> CycleSession:
         return self

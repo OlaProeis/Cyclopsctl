@@ -132,6 +132,52 @@ def test_cycle_session_restart_implementation_creates_fresh_agent(tmp_path: Path
     assert first_agent.closed is True
 
 
+def test_cycle_session_close_swallows_sdk_error_from_dead_bridge(tmp_path: Path):
+    """Regression: NetworkError on CloseAgent must not crash a finished cycle.
+
+    A successful cycle crashed at ``finally: session.__exit__`` when the
+    bridge died before ``agent.close()`` (WinError 10061 -> NetworkError).
+    """
+    from cursor_sdk.errors import NetworkError
+
+    class _DeadBridgeAgent(_FakeAgent):
+        def close(self) -> None:
+            raise NetworkError(
+                "Bridge request failed: ConnectError: [WinError 10061] "
+                "No connection could be made"
+            )
+
+    session = CycleSession(
+        project_root=tmp_path,
+        model=ModelSelection(id="composer-2.5"),
+        create_agent=lambda **_kwargs: _DeadBridgeAgent(),
+    )
+    session.start_implementation("impl")
+
+    session.close()
+
+    assert session.agent_id is None
+    # Idempotent after the failed close.
+    session.close()
+
+
+def test_cycle_session_exit_swallows_sdk_error_from_dead_bridge(tmp_path: Path):
+    from cursor_sdk.errors import NetworkError
+
+    class _DeadBridgeAgent(_FakeAgent):
+        def close(self) -> None:
+            raise NetworkError("Bridge request failed: ConnectError")
+
+    with CycleSession(
+        project_root=tmp_path,
+        model=ModelSelection(id="composer-2.5"),
+        create_agent=lambda **_kwargs: _DeadBridgeAgent(),
+    ) as session:
+        session.start_implementation("impl")
+
+    assert session.agent_id is None
+
+
 def test_cycle_session_propagates_run_failure(tmp_path: Path):
     class _ErrorAgent(_FakeAgent):
         def send(self, prompt: str) -> _FakeRun:

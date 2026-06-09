@@ -918,6 +918,10 @@ def _apply_prd_change_at_launch(
     plain: bool,
     stderr_is_tty: bool | None,
     prd_path: Path | None = None,
+    bootstrap_model: str | None = None,
+    parse_model: str | None = None,
+    analyze_model: str | None = None,
+    stdin_is_tty: bool | None = None,
 ) -> tuple[LaunchConfig, LaunchStatus | None, LaunchDispatch | None]:
     """
     Run PRD-change detection for launch RUN actions.
@@ -979,6 +983,10 @@ def _apply_prd_change_at_launch(
             explicit_tag=tag,
             no_new_tag=no_new_tag,
             assume_yes=assume_yes,
+            bootstrap_model=bootstrap_model,
+            parse_model=parse_model,
+            analyze_model=analyze_model,
+            stdin_is_tty=stdin_is_tty,
             tag_prompt=tag_prompt,
             backend=_resolve_launch_backend(config),
         )
@@ -1050,6 +1058,9 @@ def run_launch(
     doctor_fix: bool | None = None,
     no_new_tag: bool = False,
     assume_yes: bool = False,
+    bootstrap_model: str | None = None,
+    parse_model: str | None = None,
+    analyze_model: str | None = None,
     env: dict[str, str] | None = None,
     which: Callable[[str], str | None] | None = None,
     bridge_manager: Callable | None = None,
@@ -1149,6 +1160,10 @@ def run_launch(
         plain=use_plain,
         stderr_is_tty=stderr_is_tty,
         prd_path=prd,
+        bootstrap_model=bootstrap_model,
+        parse_model=parse_model,
+        analyze_model=analyze_model,
+        stdin_is_tty=is_tty,
     )
     if prd_dispatch is not None:
         return prd_dispatch

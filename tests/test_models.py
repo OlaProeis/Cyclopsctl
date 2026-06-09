@@ -16,6 +16,7 @@ from cyclopsctl.models import (
     ModelCapabilities,
     ModelListingError,
     detect_composer,
+    detect_fable_high_thinking,
     detect_opus_high_thinking,
     detect_opus_max,
     detect_sonnet_max,
@@ -39,6 +40,58 @@ def _opus_models() -> list[SDKModel]:
         ),
         SDKModel(id="composer-2.5", display_name="Composer 2.5"),
     ]
+
+
+def test_detect_fable_high_thinking_prefers_high_variant():
+    models = [
+        SDKModel(
+            id="claude-fable-5",
+            display_name="Fable 5",
+            variants=(
+                ModelVariant(
+                    display_name="Default",
+                    params=(),
+                    is_default=True,
+                ),
+                ModelVariant(
+                    display_name="High thinking",
+                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                ),
+            ),
+        ),
+        SDKModel(
+            id="claude-fable-5-thinking-high",
+            display_name="Fable 5 High Thinking",
+            variants=(
+                ModelVariant(
+                    display_name="High thinking",
+                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                ),
+            ),
+        ),
+    ]
+    selection = detect_fable_high_thinking(models)
+    assert selection is not None
+    assert selection.id == "claude-fable-5-thinking-high"
+
+
+def test_detect_fable_excludes_max_mode():
+    models = [
+        SDKModel(id="claude-fable-5-max", display_name="Fable 5 Max"),
+        SDKModel(
+            id="claude-fable-5-thinking-high",
+            display_name="Fable 5 High Thinking",
+            variants=(
+                ModelVariant(
+                    display_name="High",
+                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                ),
+            ),
+        ),
+    ]
+    selection = detect_fable_high_thinking(models)
+    assert selection is not None
+    assert selection.id == "claude-fable-5-thinking-high"
 
 
 def test_detect_opus_prefers_high_thinking_over_fast():

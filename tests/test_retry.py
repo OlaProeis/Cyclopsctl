@@ -343,6 +343,192 @@ class _AlwaysTransientAgent(_FakeAgent):
         raise CursorAgentError("network timeout", is_retryable=True)
 
 
+class _FakeBridge:
+    def __init__(self, *, alive: bool) -> None:
+        self.alive = alive
+        self.process = type("P", (), {"pid": 1234})()
+
+    def is_alive(self) -> bool:
+        return self.alive
+
+
+class _NullLogger:
+    def __init__(self) -> None:
+        self.warnings: list[dict[str, object]] = []
+
+    def log_warning(self, message: str, **fields: object) -> None:
+        self.warnings.append({"message": message, **fields})
+
+
+def _bridge_connect_error() -> AgentRunError:
+    return AgentRunError(
+        "Agent startup failed: Bridge request failed: ConnectError: "
+        "[WinError 10061] No connection could be made because the target "
+        "machine actively refused it",
+        kind=RunFailureKind.STARTUP,
+        exit_code=STARTUP_EXIT_CODE,
+        phase="startup",
+    )
+
+
+def test_is_bridge_connect_failure_matches_winerror_10061():
+    from cyclopsctl.loop import _is_bridge_connect_failure
+
+    assert _is_bridge_connect_failure(_bridge_connect_error()) is True
+
+
+def test_is_bridge_connect_failure_ignores_other_errors():
+    from cyclopsctl.loop import _is_bridge_connect_failure
+
+    exc = AgentRunError(
+        "implementation wait failed: network timeout",
+        kind=RunFailureKind.STARTUP,
+        exit_code=STARTUP_EXIT_CODE,
+        phase="implementation",
+    )
+    assert _is_bridge_connect_failure(exc) is False
+
+
+def test_recover_bridge_before_retry_relaunches_dead_bridge(
+    project_tree: Path, monkeypatch
+):
+    from cyclopsctl import loop
+
+    recovered: list[Path] = []
+    monkeypatch.setattr(
+        loop, "active_managed_bridge", lambda: _FakeBridge(alive=False)
+    )
+    monkeypatch.setattr(
+        loop, "recover_managed_bridge", lambda root: recovered.append(root)
+    )
+    log = _NullLogger()
+
+    loop._recover_bridge_before_retry(
+        _config(project_tree),
+        exc=AgentRunError(
+            "implementation wait failed: network timeout",
+            kind=RunFailureKind.STARTUP,
+            exit_code=STARTUP_EXIT_CODE,
+        ),
+        log=log,
+        cycle_number=1,
+    )
+
+    assert recovered == [project_tree]
+    assert log.warnings[0]["message"] == (
+        "cursor-sdk-bridge is down; relaunching before retry"
+    )
+
+
+def test_recover_bridge_before_retry_relaunches_on_connect_refused(
+    project_tree: Path, monkeypatch
+):
+    """Even an alive-but-unreachable (frozen) bridge is replaced."""
+    from cyclopsctl import loop
+
+    recovered: list[Path] = []
+    monkeypatch.setattr(
+        loop, "active_managed_bridge", lambda: _FakeBridge(alive=True)
+    )
+    monkeypatch.setattr(
+        loop, "recover_managed_bridge", lambda root: recovered.append(root)
+    )
+
+    loop._recover_bridge_before_retry(
+        _config(project_tree),
+        exc=_bridge_connect_error(),
+        log=_NullLogger(),
+        cycle_number=1,
+    )
+
+    assert recovered == [project_tree]
+
+
+def test_recover_bridge_before_retry_skips_healthy_bridge(
+    project_tree: Path, monkeypatch
+):
+    from cyclopsctl import loop
+
+    recovered: list[Path] = []
+    monkeypatch.setattr(
+        loop, "active_managed_bridge", lambda: _FakeBridge(alive=True)
+    )
+    monkeypatch.setattr(
+        loop, "recover_managed_bridge", lambda root: recovered.append(root)
+    )
+
+    loop._recover_bridge_before_retry(
+        _config(project_tree),
+        exc=AgentRunError(
+            "implementation wait failed: network timeout",
+            kind=RunFailureKind.STARTUP,
+            exit_code=STARTUP_EXIT_CODE,
+        ),
+        log=_NullLogger(),
+        cycle_number=1,
+    )
+
+    assert recovered == []
+
+
+def test_recover_bridge_before_retry_noop_without_managed_bridge(
+    project_tree: Path, monkeypatch
+):
+    from cyclopsctl import loop
+
+    monkeypatch.setattr(loop, "active_managed_bridge", lambda: None)
+    monkeypatch.setattr(
+        loop,
+        "recover_managed_bridge",
+        lambda _root: pytest.fail("must not recover"),
+    )
+
+    loop._recover_bridge_before_retry(
+        _config(project_tree),
+        exc=_bridge_connect_error(),
+        log=_NullLogger(),
+        cycle_number=1,
+    )
+
+
+def test_run_cycles_recovers_bridge_during_transient_retry(
+    project_tree: Path, monkeypatch
+):
+    """End to end: dead bridge is relaunched before the retry attempt."""
+    from cyclopsctl import loop
+
+    recovered: list[Path] = []
+    monkeypatch.setattr(
+        loop, "active_managed_bridge", lambda: _FakeBridge(alive=False)
+    )
+    monkeypatch.setattr(
+        loop, "recover_managed_bridge", lambda root: recovered.append(root)
+    )
+
+    cfg = _config(project_tree, retry_on="transient", retry_max_attempts=3)
+
+    def on_update(_prompt: str) -> None:
+        (project_tree / "current-handover-prompt.md").write_text(
+            "# Task ID: 9\n\nAdvanced.\n",
+            encoding="utf-8",
+        )
+
+    result = run_cycles(
+        cfg,
+        get_next_task_fn=lambda _root, tag=None: _next_task(),
+        router=_router(),
+        session_factory=_make_session_factory(
+            project_tree,
+            on_update=on_update,
+            agent_factory=_TransientThenSuccessAgent,
+        ),
+        sleep_fn=lambda _seconds: None,
+    )
+
+    assert result.completed_cycles == 1
+    assert recovered == [project_tree]
+
+
 def test_run_cycles_exhausts_retry_budget(project_tree: Path):
     cfg = _config(
         project_tree,

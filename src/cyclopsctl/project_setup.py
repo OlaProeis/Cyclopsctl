@@ -788,6 +788,10 @@ def handle_launch_prd_change(
     explicit_tag: str | None = None,
     no_new_tag: bool = False,
     assume_yes: bool = False,
+    bootstrap_model: str | None = None,
+    parse_model: str | None = None,
+    analyze_model: str | None = None,
+    stdin_is_tty: bool | None = None,
     tag_prompt: Callable[[str], str | None] | None = None,
     backend: TaskBackend | None = None,
     task_backend: TaskBackendKind | None = None,
@@ -857,6 +861,29 @@ def handle_launch_prd_change(
 
     steps: list[str] = []
 
+    from cyclopsctl.tasks.bootstrap_model import resolve_bootstrap_tasks_settings
+
+    config_path = root / "cyclopsctl.toml"
+    file_cfg: dict = {}
+    if config_path.is_file():
+        file_cfg = load_config_file(config_path)
+
+    is_tty = stdin_is_tty if stdin_is_tty is not None else sys.stdin.isatty()
+    bootstrap_settings = resolve_bootstrap_tasks_settings(
+        bootstrap_model=bootstrap_model,
+        parse_model=parse_model,
+        analyze_model=analyze_model,
+        max_tasks=None,
+        file_cfg=file_cfg,
+        stdin_is_tty=is_tty,
+        interactive=is_tty and not assume_yes,
+    )
+    _print_setup_progress(
+        "Bootstrap model: "
+        f"{bootstrap_settings.parse_model!r} "
+        "(PRD parse + complexity analysis)"
+    )
+
     try:
         if create_tag:
             resolved_backend.add_tag(root, new_tag)
@@ -864,12 +891,19 @@ def handle_launch_prd_change(
         resolved_backend.use_tag(root, new_tag)
         steps.append("use-tag")
         load_project_env(root)
-        resolved_backend.parse_prd(root, resolved_prd, tag=new_tag)
+        resolved_backend.parse_prd(
+            root,
+            resolved_prd,
+            tag=new_tag,
+            parse_model=bootstrap_settings.parse_model,
+            max_tasks=bootstrap_settings.max_tasks,
+        )
         steps.append("parse-prd")
         resolved_backend.analyze_complexity(
             root,
             tag=new_tag,
             skip_if_exists=False,
+            analyze_model=bootstrap_settings.analyze_model,
         )
         steps.append("analyze-complexity")
 

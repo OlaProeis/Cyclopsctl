@@ -10,6 +10,7 @@ from cyclopsctl.runner import AgentRunError, RunFailureKind
 from cyclopsctl.tasks.bootstrap_model import (
     BOOTSTRAP_PRESET_AUTO,
     BOOTSTRAP_PRESET_COMPOSER,
+    BOOTSTRAP_PRESET_FABLE,
     BOOTSTRAP_PRESET_OPUS,
     BOOTSTRAP_PRESET_OPUS_MAX,
     BOOTSTRAP_PRESET_SONNET_MAX,
@@ -73,6 +74,17 @@ def _models() -> list[SDKModel]:
                 ),
             ),
         ),
+        SDKModel(
+            id="claude-fable-5-thinking-high",
+            display_name="Fable 5 High Thinking",
+            description="",
+            variants=(
+                ModelVariant(
+                    display_name="High thinking",
+                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                ),
+            ),
+        ),
     ]
 
 
@@ -87,6 +99,7 @@ def test_normalize_bootstrap_preset_aliases():
 
 def test_bootstrap_preset_names_includes_new_presets():
     names = bootstrap_preset_names()
+    assert BOOTSTRAP_PRESET_FABLE in names
     assert BOOTSTRAP_PRESET_OPUS in names
     assert BOOTSTRAP_PRESET_SONNET_MAX in names
     assert BOOTSTRAP_PRESET_OPUS_MAX in names
@@ -102,6 +115,22 @@ def test_bootstrap_model_attempt_chain_auto_tries_sonnet_then_composer():
         list_models=list_models,
     )
     assert [model.id for model in chain] == ["claude-sonnet-4-6", "composer-2.5"]
+
+
+def test_bootstrap_model_attempt_chain_fable_falls_back_to_sonnet_then_composer():
+    def list_models(**_kwargs: object) -> list[SDKModel]:
+        return _models()
+
+    chain = bootstrap_model_attempt_chain(
+        "fable-high-thinking",
+        api_key="key",
+        list_models=list_models,
+    )
+    assert [model.id for model in chain] == [
+        "claude-fable-5-thinking-high",
+        "claude-sonnet-4-6",
+        "composer-2.5",
+    ]
 
 
 def test_bootstrap_model_attempt_chain_composer_only():
@@ -208,9 +237,15 @@ def test_prompt_bootstrap_model_choice_reads_selection(monkeypatch):
     assert prompt_bootstrap_model_choice() == BOOTSTRAP_PRESET_COMPOSER
 
 
+def test_prompt_bootstrap_model_choice_reads_fable_selection(monkeypatch):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "4")
+    assert prompt_bootstrap_model_choice() == BOOTSTRAP_PRESET_FABLE
+
+
 def test_prompt_bootstrap_model_choice_reads_opus_max_selection(monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda _prompt: "6")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "7")
     assert prompt_bootstrap_model_choice() == BOOTSTRAP_PRESET_OPUS_MAX
 
 

@@ -378,6 +378,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Number of cycles (required in non-interactive mode)",
     )
     launch_parser.add_argument(
+        "--bootstrap-model",
+        metavar="MODEL",
+        help=(
+            "Bootstrap AI preset when launch parses a changed PRD: "
+            "auto, composer, sonnet, fable-high-thinking, opus-high-thinking, "
+            "sonnet-max, opus-max, or explicit Cursor model id"
+        ),
+    )
+    launch_parser.add_argument(
+        "--parse-model",
+        metavar="MODEL",
+        help="Override parse-prd model during launch PRD-change flow",
+    )
+    launch_parser.add_argument(
+        "--analyze-model",
+        metavar="MODEL",
+        help="Override analyze-complexity model during launch PRD-change flow",
+    )
+    launch_parser.add_argument(
         "--strict-handover",
         action="store_true",
         help="Fail when handover Task ID does not match backend next",
@@ -571,8 +590,8 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MODEL",
         help=(
             "Bootstrap AI preset for PRD parse and complexity analysis: "
-            "auto, composer, sonnet, opus-high-thinking, sonnet-max, opus-max, "
-            "or explicit Cursor model id"
+            "auto, composer, sonnet, fable-high-thinking, opus-high-thinking, "
+            "sonnet-max, opus-max, or explicit Cursor model id"
         ),
     )
     init_parser.add_argument(
@@ -981,6 +1000,9 @@ def _launch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -
                 skip_analyze=True if args.skip_analyze else None,
                 doctor_fix=True if args.fix else None,
                 assume_yes=args.yes,
+                bootstrap_model=args.bootstrap_model,
+                parse_model=args.parse_model,
+                analyze_model=args.analyze_model,
                 bridge_manager=managed_sdk_bridge,
             )
             if dispatch.argv is None:

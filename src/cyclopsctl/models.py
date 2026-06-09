@@ -121,6 +121,10 @@ def _is_opus_model_blob(blob: str) -> bool:
     return "opus" in blob
 
 
+def _is_fable_model_blob(blob: str) -> bool:
+    return "fable" in blob
+
+
 _MAX_MODE_PARAM_IDS = frozenset({"max", "max_mode", "maxmode"})
 _MAX_MODE_TRUTHY = frozenset({"true", "1", "yes", "on", "max", "enabled"})
 _EXTENDED_CONTEXT_PARAM_IDS = frozenset({"context", "context_window", "contextwindow"})
@@ -275,6 +279,81 @@ def detect_opus_max(models: Sequence[SDKModel]) -> ModelSelection | None:
         family_check=_is_opus_model_blob,
         prefer_thinking_on_opus=True,
     )
+
+
+def _fable_model_rank(model: SDKModel) -> int:
+    blob = _normalized_text(model.id, model.display_name, model.description)
+    if _is_disqualified_tier(blob) or not _is_fable_model_blob(blob):
+        return -1
+    score = 0
+    if "5" in model.id or "fable-5" in blob or "fable 5" in blob:
+        score += 20
+    if "thinking" in blob:
+        score += 30
+    if "high" in blob:
+        score += 25
+    return score
+
+
+def _fable_variant_rank(model_id: str, variant: ModelVariant) -> int:
+    param_blob = " ".join(
+        f"{param.id} {param.value}" for param in variant.params
+    )
+    blob = _normalized_text(
+        model_id,
+        variant.display_name,
+        variant.description,
+        param_blob,
+    )
+    if _is_disqualified_tier(blob) or not _is_fable_model_blob(blob):
+        return -1
+
+    score = 0
+    if "5" in model_id or "fable-5" in blob:
+        score += 20
+    if "thinking" in blob or "high" in blob:
+        score += 30
+    if any(
+        param.id.lower() in {"reasoning", "reasoning_effort", "thinking"}
+        and "high" in param.value.lower()
+        for param in variant.params
+    ):
+        score += 40
+    return score
+
+
+def detect_fable_high_thinking(models: Sequence[SDKModel]) -> ModelSelection | None:
+    """
+    Pick a Fable 5 high-thinking preset from account model listings.
+
+    Prefers variant params over hardcoded ids; excludes Max Mode and fast tiers.
+    """
+    best: tuple[int, ModelSelection] | None = None
+
+    for model in models:
+        model_base_rank = _fable_model_rank(model)
+        candidates: list[tuple[int, ModelSelection]] = []
+
+        for variant in model.variants:
+            rank = _fable_variant_rank(model.id, variant)
+            if rank < 0:
+                continue
+            candidates.append(
+                (
+                    rank,
+                    ModelSelection(id=model.id, params=tuple(variant.params)),
+                )
+            )
+
+        if not candidates and model_base_rank >= 0:
+            candidates.append((model_base_rank, ModelSelection(id=model.id)))
+
+        for rank, selection in candidates:
+            combined = rank + model_base_rank
+            if best is None or combined > best[0]:
+                best = (combined, selection)
+
+    return best[1] if best else None
 
 
 def detect_opus_high_thinking(models: Sequence[SDKModel]) -> ModelSelection | None:
