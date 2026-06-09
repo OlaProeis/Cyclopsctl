@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -119,6 +120,7 @@ class AgentRunError(RuntimeError):
         agent_id: str | None = None,
         run_id: str | None = None,
         result_detail: str | None = None,
+        diagnostic_detail: str | None = None,
         phase: str | None = None,
         cause: BaseException | None = None,
     ) -> None:
@@ -128,6 +130,10 @@ class AgentRunError(RuntimeError):
         self.agent_id = agent_id
         self.run_id = run_id
         self.result_detail = result_detail
+        # Best-effort context recovered from the run conversation when the SDK
+        # returned no ``result`` detail. Display-only: never used for retry or
+        # billing-failure classification.
+        self.diagnostic_detail = diagnostic_detail
         self.phase = phase
         self.cause = cause
 
@@ -691,9 +697,16 @@ def send_and_wait(
 
     if status == "error":
         detail = str(result.result).strip() if result.result else ""
+        # The SDK frequently returns an empty result for errored runs; pull
+        # best-effort context from the run conversation so the failure report
+        # is actionable. Kept separate from ``result_detail`` because retry
+        # classification keys off whether the SDK itself reported a reason.
+        diagnostic = "" if detail else extract_run_error_detail(run)
         message = f"{phase} run failed: agent={agent.agent_id} run={result.id}"
         if detail:
             message = f"{message}: {detail}"
+        elif diagnostic:
+            message = f"{message} ({diagnostic})"
         raise AgentRunError(
             message,
             kind=RunFailureKind.RUN,
@@ -701,6 +714,7 @@ def send_and_wait(
             agent_id=agent.agent_id,
             run_id=result.id,
             result_detail=detail or None,
+            diagnostic_detail=diagnostic or None,
             phase=phase,
         )
 
@@ -710,6 +724,65 @@ def send_and_wait(
         status=status,
         result=result.result,
     )
+
+
+_ERROR_DETAIL_MAX_LEN = 300
+
+
+def _collect_error_and_text_strings(
+    node: Any,
+    errors: list[str],
+    texts: list[str],
+) -> None:
+    if isinstance(node, Mapping):
+        for key, value in node.items():
+            if isinstance(value, str) and value.strip():
+                stripped = value.strip()
+                if stripped == "[REDACTED]":
+                    continue
+                if "error" in str(key).lower():
+                    errors.append(stripped)
+                elif str(key).lower() == "text":
+                    texts.append(stripped)
+            else:
+                _collect_error_and_text_strings(value, errors, texts)
+    elif isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        for item in node:
+            _collect_error_and_text_strings(item, errors, texts)
+
+
+def extract_run_error_detail(run: Any) -> str:
+    """Best-effort error context for an errored run with an empty SDK result.
+
+    Fetches the run conversation JSON (when the run handle exposes it) and
+    returns the most recent error-keyed string, falling back to the last
+    assistant prose. Never raises: any failure simply yields an empty string.
+    """
+    conversation_json = getattr(run, "conversation_json", None)
+    if not callable(conversation_json):
+        return ""
+    try:
+        raw = conversation_json()
+    except Exception:
+        logger.debug("conversation_json unavailable for error detail", exc_info=True)
+        return ""
+    if not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return ""
+
+    errors: list[str] = []
+    texts: list[str] = []
+    _collect_error_and_text_strings(parsed, errors, texts)
+    if errors:
+        return truncate_activity_text(errors[-1], max_len=_ERROR_DETAIL_MAX_LEN)
+    if texts:
+        return "last agent output: " + truncate_activity_text(
+            texts[-1], max_len=_ERROR_DETAIL_MAX_LEN
+        )
+    return ""
 
 
 def is_opus_billing_failure(message: str) -> bool:
@@ -747,13 +820,25 @@ def is_transient_cursor_agent_error(exc: CursorAgentError) -> bool:
 
 def is_transient_agent_failure(exc: BaseException) -> bool:
     """
-    Return whether ``exc`` is a transient SDK startup/send/wait failure.
+    Return whether ``exc`` is a transient agent failure worth retrying.
 
-    Agent logical failures (``RunFailureKind.RUN``) and non-agent errors are
-    never transient.
+    Covers two cases:
+
+    - SDK startup/send/wait failures (``RunFailureKind.STARTUP``) whose
+      ``CursorAgentError`` cause looks like a short-lived network/SDK blip.
+    - Runs that completed with ``status == "error"`` but **no SDK detail**
+      (``RunFailureKind.RUN`` with empty ``result_detail``). In practice an
+      errored run with an empty result is an upstream infrastructure blip
+      (model/server/connection), not an agent logical failure; re-running the
+      cycle with a fresh agent is the same recovery as a manual relaunch.
+
+    Run failures that carry an SDK detail (e.g. billing/credits messages) and
+    non-agent errors are never transient.
     """
     if not isinstance(exc, AgentRunError):
         return False
+    if exc.kind == RunFailureKind.RUN:
+        return not (exc.result_detail or "").strip()
     if exc.kind != RunFailureKind.STARTUP:
         return False
     cause = exc.cause

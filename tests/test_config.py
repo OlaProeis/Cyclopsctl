@@ -320,12 +320,20 @@ def test_custom_ai_context_path_resolves(project_tree: Path):
     assert cfg.ai_context == custom.resolve()
 
 
-def test_retry_defaults_off(project_tree: Path):
+def test_retry_defaults_transient(project_tree: Path):
     cfg = build_run_config(_base_cli(project_tree))
-    assert cfg.retry_on == "off"
-    assert cfg.retry_transient_enabled is False
+    assert cfg.retry_on == "transient"
+    assert cfg.retry_transient_enabled is True
     assert cfg.retry_max_attempts == 3
     assert cfg.retry_backoff_seconds == (5, 15)
+
+
+def test_retry_off_from_cli(project_tree: Path):
+    cli = _base_cli(project_tree)
+    cli["retry_on"] = "off"
+    cfg = build_run_config(cli)
+    assert cfg.retry_on == "off"
+    assert cfg.retry_transient_enabled is False
 
 
 def test_retry_on_transient_from_cli(project_tree: Path):

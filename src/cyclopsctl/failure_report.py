@@ -189,6 +189,10 @@ def format_failure_report(
     detail = (exc.result_detail or "").strip()
     lines.append(f"  detail:     {detail or _NO_DETAIL}")
 
+    diagnostic = (getattr(exc, "diagnostic_detail", None) or "").strip()
+    if diagnostic:
+        lines.append(f"  context:    {diagnostic}")
+
     transcript = resolve_transcript_path(project_root, exc.agent_id, home=home)
     lines.append(f"  transcript: {transcript if transcript is not None else _NO_TRANSCRIPT}")
 

@@ -6,7 +6,7 @@
 
 - **`create_local_agent`** — `Agent.create` with `local.cwd=project_root` and optional `api_key`; raises **`AgentRunError`** on `CursorAgentError` (startup, exit code 1).
 - **`send_and_wait`** — sends prompt unchanged; optionally consumes SDK activity streams via `on_activity` before `run.wait()`; returns **`SendRunResult`** (`agent_id`, `run_id`, `status`, `result`).
-- **`AgentRunError`** — `RunFailureKind.STARTUP` (exit 1) vs `RunFailureKind.RUN` when `status == "error"` (exit 2). Carries `agent_id`, `run_id`, `result_detail`, and `phase` (`"startup"` / `"implementation"` / `"update"`) for failure diagnostics (see `docs/runtime/failure-diagnostics.md`).
+- **`AgentRunError`** — `RunFailureKind.STARTUP` (exit 1) vs `RunFailureKind.RUN` when `status == "error"` (exit 2). Carries `agent_id`, `run_id`, `result_detail`, optional `diagnostic_detail` (display-only conversation context), and `phase` (`"startup"` / `"implementation"` / `"update"`) for failure diagnostics (see `docs/runtime/failure-diagnostics.md`). Empty `result_detail` on a run error is treated as transient when `retry_on = "transient"` (see `docs/runtime/transient-retry.md`).
 - Injectable `create_agent`, `send_fn`, `wait_fn` for tests.
 
 ## Session (`session.py`)

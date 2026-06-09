@@ -329,7 +329,7 @@ def test_e2e_run_failure_exits_with_code_2(project_tree: Path, monkeypatch, caps
         return run_cycles(*args, **kwargs)
 
     with patch("cyclopsctl.cli.run_cycles", side_effect=run_with_run_failure):
-        code = main(_run_argv(project_tree, cycles=3))
+        code = main(_run_argv(project_tree, cycles=3) + ["--retry-on", "off"])
 
     captured = capsys.readouterr()
     assert code == RUN_FAILURE_EXIT_CODE

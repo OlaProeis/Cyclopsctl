@@ -194,7 +194,7 @@ By default this command **re-runs** analysis and replaces a stale report (e.g. f
 | `--resume` | Skip completed parent tasks from run history |
 | `--fresh` | Force first-prompt bootstrap; ignore ready handover |
 | `--plain` | Disable Rich dashboard; plain text logs |
-| `--retry-on transient` | Retry transient SDK/network failures |
+| `--retry-on off` | Disable default transient retry (SDK blips and empty-detail run errors) |
 | `--dry-run` | Resolve task and model without starting an agent |
 
 See [`cyclopsctl.toml.example`](cyclopsctl.toml.example) for full TOML options including `[routing]` rules, `[profile.*]` presets, `[tasks]` parse/analyze models, and `task_source`.

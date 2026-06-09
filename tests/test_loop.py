@@ -528,7 +528,7 @@ def test_run_cycles_stops_on_backend_next_error(project_tree: Path):
 
 
 def test_run_cycles_stops_on_agent_run_error_without_next_cycle(project_tree: Path):
-    cfg = _config(project_tree, cycles=3)
+    cfg = _config(project_tree, cycles=3, retry_on="off")
     calls = {"next": 0}
 
     def get_next(_root: Path, *, tag: str | None = None) -> NextTaskLookup:
@@ -1209,7 +1209,7 @@ def test_run_cycles_clears_state_on_success(project_tree: Path):
 
 def test_run_cycles_marks_state_failed_on_agent_failure(project_tree: Path):
     state_path = project_tree / ".cyclopsctl" / "state.json"
-    cfg = _config(project_tree, cycles=2)
+    cfg = _config(project_tree, cycles=2, retry_on="off")
 
     with pytest.raises(AgentRunError):
         run_cycles(

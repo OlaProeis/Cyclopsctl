@@ -46,7 +46,9 @@ Bootstrap cycle 1 (first-prompt path) skips handover alignment and allows a miss
 |-------|----------------------|
 | Successful run with ≥1 verified cycle | Updated with final handover snapshot and completed task IDs |
 | Empty queue after partial completion | Updated same as success |
-| Crash / interrupt / mid-run failure | Unchanged (no partial update) |
+| Mid-run failure after ≥1 verified cycle | Best-effort update with completed task IDs from verified cycles (`loop._persist_run_history_after_failure`); original error still propagates |
+| Interrupt (SIGINT) after ≥1 verified cycle | Same best-effort partial update as mid-run failure |
+| Failure before any verified cycle | Unchanged |
 | `--fresh` | Ignored for startup only; successful runs still update history unless `--no-history` |
 
 ## CLI and status
@@ -80,7 +82,7 @@ On successful runs with `--resume`, persisted `completed_cycle_task_ids` merges 
 | Module | Role |
 |--------|------|
 | `history.py` | Schema, read/write, `load_completed_task_ids`, `merge_completed_task_ids`, `resolve_startup`, handover validation |
-| `loop.py` | Startup resolution, resume skip loop, `_implementation_prompt`, post-run persistence |
+| `loop.py` | Startup resolution, resume skip loop, `_implementation_prompt`, post-run persistence, `_persist_run_history_after_failure` on abort |
 | `task_selection.py` | `exclude_task_ids` support when advancing past skipped tasks |
 | `config.py` | `history_file`, `fresh`, `resume` settings and validation |
 | `cli.py` | `--fresh`, `--resume`, `--history-file`, `--no-history`; status output |

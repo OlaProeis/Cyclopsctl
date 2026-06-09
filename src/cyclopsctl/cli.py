@@ -175,9 +175,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--retry-on",
-        choices=["transient"],
+        choices=["transient", "off"],
         metavar="MODE",
-        help="Retry transient SDK/network failures during agent send/wait (default: off)",
+        help=(
+            "Retry transient agent failures (SDK/network blips and errored "
+            "runs with no SDK detail). Default: transient; use 'off' to stop "
+            "on the first failure"
+        ),
     )
     run_parser.add_argument(
         "--retry-max-attempts",
@@ -637,6 +641,7 @@ def _log_and_exit_agent_run(
         agent_id=exc.agent_id,
         run_id=exc.run_id,
         result_detail=exc.result_detail,
+        diagnostic_detail=exc.diagnostic_detail,
     )
     print(f"cyclopsctl: error: {exc}", file=sys.stderr)
     print(

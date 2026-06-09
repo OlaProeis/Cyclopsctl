@@ -5,7 +5,7 @@ Install cyclopsctl globally via **`pip install`** from git (no clone required) o
 ## Version reporting
 
 - `cyclopsctl --version` prints the installed distribution version via `importlib.metadata` (`src/cyclopsctl/version.py`).
-- `cyclopsctl.version.get_package_version()` falls back to `0.1.2` when the package is not installed (editable dev without metadata).
+- `cyclopsctl.version.get_package_version()` falls back to `0.1.4` when the package is not installed (editable dev without metadata).
 
 ## Shell installers
 
@@ -25,7 +25,7 @@ Both scripts:
 ```powershell
 .\install.ps1
 .\install.ps1 -Source local
-.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.2"
+.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.4"
 ```
 
 ```bash

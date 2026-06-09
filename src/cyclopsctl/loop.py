@@ -888,6 +888,35 @@ def _log_startup_resolution(
         )
 
 
+def _persist_run_history_after_failure(
+    config: CyclopsctlConfig,
+    *,
+    result: RunLoopResult,
+    prior_completed_task_ids: list[int] | None,
+    log: CycleLogger,
+) -> None:
+    """Best-effort history write so ``--resume`` knows about verified cycles.
+
+    Called when an exception aborts the run loop after one or more cycles
+    completed. Persistence failures are logged, never raised, so the original
+    error keeps propagating.
+    """
+    if result.completed_cycles == 0 or config.dry_run:
+        return
+    try:
+        _persist_run_history(
+            config,
+            completed_task_ids=[outcome.task_id for outcome in result.outcomes],
+            prior_completed_task_ids=prior_completed_task_ids,
+        )
+    except Exception as persist_exc:
+        log.log_warning(
+            "Failed to persist run history after run failure",
+            error=str(persist_exc),
+            completed_cycles=result.completed_cycles,
+        )
+
+
 def _persist_run_history(
     config: CyclopsctlConfig,
     *,
@@ -1040,7 +1069,25 @@ def run_cycles(
             prior_completed_task_ids=prior_completed_task_ids,
         )
     except RunInterruptedError as exc:
+        _persist_run_history_after_failure(
+            config,
+            result=result,
+            prior_completed_task_ids=prior_completed_task_ids,
+            log=log,
+        )
         exc.partial_result = result
+        raise
+    except BaseException:
+        # A cycle failed (agent error, verification, queue, ...) after earlier
+        # cycles were verified: persist those task ids so --resume can skip
+        # them on the next invocation. Task status and the handover were
+        # already advanced by the update phase, so this only backfills history.
+        _persist_run_history_after_failure(
+            config,
+            result=result,
+            prior_completed_task_ids=prior_completed_task_ids,
+            log=log,
+        )
         raise
 
 

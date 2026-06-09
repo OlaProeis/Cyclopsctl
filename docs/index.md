@@ -60,9 +60,9 @@
 - `runtime/run-observability.md` - `cyclopsctl run --dry-run`, optional per-cycle git diff summaries, transcript JSON sidecars, and extended post-run/JSONL fields.
 - `runtime/graceful-interrupt.md` - SIGINT handling, cooperative shutdown, exit code 130, and Rich Live teardown during `cyclopsctl run`.
 - `runtime/crash-recovery-state.md` - Atomic `.cyclopsctl/state.json` persistence, `cyclopsctl status`, `failed` status on agent failure, and post-crash inspection lifecycle.
-- `runtime/failure-diagnostics.md` - Actionable `AgentRunError` report on exit: result detail, resolved local transcript path (`encode_project_slug`), `AgentRunError.phase`, and `failed` state persistence.
-- `runtime/run-history.md` - Cross-invocation `.cyclopsctl/run-history.json`, cycle-1 handover vs bootstrap prompt selection, `--fresh`, `--resume` task-level skip of completed parent tasks, and handover validation (history warns only; does not gate handover use).
-- `runtime/transient-retry.md` - Optional `--retry-on transient` for SDK send/wait blips, backoff config, and non-retryable failure boundaries.
+- `runtime/failure-diagnostics.md` - Actionable `AgentRunError` report on exit: result detail, optional `context:` from `diagnostic_detail` (conversation scrape), transcript path (`encode_project_slug`), `AgentRunError.phase`, and `failed` state persistence.
+- `runtime/run-history.md` - Cross-invocation `.cyclopsctl/run-history.json`, cycle-1 handover vs bootstrap prompt selection, `--fresh`, `--resume` task-level skip, partial history on mid-run failure/interrupt, and handover validation (history warns only; does not gate handover use).
+- `runtime/transient-retry.md` - Default-on `retry_on = "transient"` for SDK send/wait blips and errored runs with no SDK detail, backoff config, `--retry-on off`, and non-retryable failure boundaries.
 
 ## CLI
 - `cli/model-inspection-cli.md` - `cyclopsctl models` diagnostic subcommand and routing preset report.

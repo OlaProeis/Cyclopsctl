@@ -13,6 +13,7 @@ from cyclopsctl.runner import (
     AgentRunError,
     RunFailureKind,
     create_local_agent,
+    extract_run_error_detail,
     is_opus_billing_failure,
     is_transient_agent_failure,
     is_transient_cursor_agent_error,
@@ -161,6 +162,61 @@ def test_send_and_wait_run_failure_on_error_status():
     assert err.run_id == "run-1"
 
 
+def test_extract_run_error_detail_prefers_error_keys():
+    class _ConversationRun:
+        def conversation_json(self) -> str:
+            return (
+                '[{"turn": {"steps": [{"text": "working on it"},'
+                ' {"errorMessage": "ConnectError: stream closed"}]}}]'
+            )
+
+    assert (
+        extract_run_error_detail(_ConversationRun())
+        == "ConnectError: stream closed"
+    )
+
+
+def test_extract_run_error_detail_falls_back_to_last_text():
+    class _ConversationRun:
+        def conversation_json(self) -> str:
+            return '[{"text": "first"}, {"text": "last words"}]'
+
+    assert (
+        extract_run_error_detail(_ConversationRun())
+        == "last agent output: last words"
+    )
+
+
+def test_extract_run_error_detail_never_raises():
+    class _BrokenRun:
+        def conversation_json(self) -> str:
+            raise RuntimeError("conversation unavailable")
+
+    assert extract_run_error_detail(_BrokenRun()) == ""
+    assert extract_run_error_detail(object()) == ""
+
+
+def test_send_and_wait_attaches_diagnostic_detail_on_empty_error_result():
+    agent = _FakeAgent()
+    agent._run_status = "error"
+    agent._run_result = ""
+
+    def send_with_conversation(target_agent: _FakeAgent, prompt: str) -> _FakeRun:
+        run = target_agent.send(prompt)
+        run.conversation_json = lambda: '[{"error": "model connection dropped"}]'
+        return run
+
+    with pytest.raises(AgentRunError) as exc_info:
+        send_and_wait(agent, "prompt", send_fn=send_with_conversation)
+
+    err = exc_info.value
+    assert err.result_detail is None
+    assert err.diagnostic_detail == "model connection dropped"
+    assert "model connection dropped" in str(err)
+    # Diagnostic context must not affect retry classification.
+    assert is_transient_agent_failure(err) is True
+
+
 def test_send_and_wait_run_failure_includes_result_detail():
     agent = _FakeAgent()
     agent._run_status = "error"
@@ -229,11 +285,22 @@ def test_is_transient_agent_failure_startup_with_transient_cause():
     assert is_transient_agent_failure(err) is True
 
 
-def test_is_transient_agent_failure_rejects_run_kind():
+def test_is_transient_agent_failure_accepts_run_kind_without_detail():
+    """Errored run with no SDK detail = upstream blip; retryable."""
     err = AgentRunError(
         "run failed",
         kind=RunFailureKind.RUN,
         exit_code=RUN_FAILURE_EXIT_CODE,
+    )
+    assert is_transient_agent_failure(err) is True
+
+
+def test_is_transient_agent_failure_rejects_run_kind_with_detail():
+    err = AgentRunError(
+        "run failed: tests failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+        result_detail="tests failed",
     )
     assert is_transient_agent_failure(err) is False
 

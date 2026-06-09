@@ -17,7 +17,7 @@ from cyclopsctl.version import PACKAGE_NAME, get_package_version
 
 def test_get_package_version_matches_pyproject():
     version = get_package_version()
-    assert version == "0.1.2"
+    assert version == "0.1.4"
 
 
 def test_cli_version_flag(capsys):
@@ -58,7 +58,7 @@ def test_wheel_contains_license_and_version(tmp_path):
     parser = email.parser.Parser()
     metadata = parser.parse(io.StringIO(metadata_bytes.decode()))
     assert metadata.get("Name") == PACKAGE_NAME
-    assert metadata.get("Version") == "0.1.2"
+    assert metadata.get("Version") == "0.1.4"
     license_value = metadata.get("License") or metadata.get("License-Expression")
     assert license_value is not None
     assert "MIT" in license_value

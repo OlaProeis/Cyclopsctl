@@ -88,8 +88,9 @@ strict_handover = false
 # Validated via cyclopsctl tasks show. CLI: --task-id N
 # task_id = 16
 
-# Retry transient SDK/network failures during agent send/wait (optional).
-# Default: off (backward compatible). CLI: --retry-on transient
+# Retry transient agent failures: SDK/network blips during send/wait and runs
+# that errored with no SDK detail (upstream infrastructure failures).
+# Default: transient. Set "off" to stop on the first failure. CLI: --retry-on off
 # retry_on = "transient"
 # retry_max_attempts = 3
 # retry_backoff_seconds = [5, 15]

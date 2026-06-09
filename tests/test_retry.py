@@ -60,10 +60,15 @@ class _AuthFailureAgent(_FakeAgent):
         raise CursorAgentError("auth failed", is_retryable=False)
 
 
-class _ErrorAgent(_FakeAgent):
+class _RunErrorOnceAgent(_FakeAgent):
+    """First run across all instances errors with an empty SDK result."""
+
+    _error_runs_remaining = 1
+
     def send(self, prompt: str) -> _FakeRun:
         run = super().send(prompt)
-        if len(self.sent) == 1:
+        if _RunErrorOnceAgent._error_runs_remaining > 0:
+            _RunErrorOnceAgent._error_runs_remaining -= 1
             run.wait = lambda: RunResult(
                 id=run.id,
                 agent_id=run.agent_id,
@@ -72,13 +77,30 @@ class _ErrorAgent(_FakeAgent):
         return run
 
 
+class _DetailedRunErrorAgent(_FakeAgent):
+    """Run errors with an SDK-reported detail (agent logical failure)."""
+
+    def send(self, prompt: str) -> _FakeRun:
+        run = super().send(prompt)
+        if len(self.sent) == 1:
+            run.wait = lambda: RunResult(
+                id=run.id,
+                agent_id=run.agent_id,
+                status="error",
+                result="agent reported: tests failed",
+            )
+        return run
+
+
 @pytest.fixture(autouse=True)
 def _reset_agent_counter():
     _FakeAgent._counter = 0
     _TransientThenSuccessAgent._transient_failures_remaining = 1
+    _RunErrorOnceAgent._error_runs_remaining = 1
     yield
     _FakeAgent._counter = 0
     _TransientThenSuccessAgent._transient_failures_remaining = 1
+    _RunErrorOnceAgent._error_runs_remaining = 1
 
 
 @pytest.fixture
@@ -250,22 +272,52 @@ def test_run_cycles_does_not_retry_auth_failure(project_tree: Path):
     assert sleeps == []
 
 
-def test_run_cycles_does_not_retry_agent_logical_error(project_tree: Path):
+def test_run_cycles_retries_run_error_without_detail(project_tree: Path):
+    """An errored run with an empty SDK result is treated as transient."""
     cfg = _config(project_tree, retry_on="transient", retry_max_attempts=3)
     sleeps: list[float] = []
 
-    with pytest.raises(AgentRunError):
+    def on_update(_prompt: str) -> None:
+        (project_tree / "current-handover-prompt.md").write_text(
+            "# Task ID: 9\n\nAdvanced.\n",
+            encoding="utf-8",
+        )
+
+    result = run_cycles(
+        cfg,
+        get_next_task_fn=lambda _root, tag=None: _next_task(),
+        router=_router(),
+        session_factory=_make_session_factory(
+            project_tree,
+            on_update=on_update,
+            agent_factory=_RunErrorOnceAgent,
+        ),
+        sleep_fn=lambda seconds: sleeps.append(seconds),
+    )
+
+    assert result.completed_cycles == 1
+    assert sleeps == [5]
+
+
+def test_run_cycles_does_not_retry_run_error_with_detail(project_tree: Path):
+    """A run error carrying an SDK detail is a logical failure; never retried."""
+    cfg = _config(project_tree, retry_on="transient", retry_max_attempts=3)
+    sleeps: list[float] = []
+
+    with pytest.raises(AgentRunError) as exc_info:
         run_cycles(
             cfg,
             get_next_task_fn=lambda _root, tag=None: _next_task(),
             router=_router(),
             session_factory=_make_session_factory(
                 project_tree,
-                agent_factory=_ErrorAgent,
+                agent_factory=_DetailedRunErrorAgent,
             ),
             sleep_fn=lambda seconds: sleeps.append(seconds),
         )
 
+    assert exc_info.value.kind == RunFailureKind.RUN
+    assert exc_info.value.result_detail == "agent reported: tests failed"
     assert sleeps == []
 
 

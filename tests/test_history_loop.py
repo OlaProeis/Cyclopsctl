@@ -356,6 +356,66 @@ def test_history_handover_updated_from_queue_complete_proceeds(
     assert "history recorded 0" in caplog.text
 
 
+def test_history_persisted_when_later_cycle_fails(project_tree: Path):
+    """Verified cycles must reach run-history.json even when a later cycle errors."""
+    from cyclopsctl.runner import AgentRunError, RunFailureKind, SendRunResult
+
+    cfg = _config(project_tree, cycles=2, retry_on="off")
+    calls = {"impl": 0}
+
+    def on_update(_prompt: str) -> None:
+        (project_tree / "current-handover-prompt.md").write_text(
+            "# Task ID: 9\n\nAdvanced.\n",
+            encoding="utf-8",
+        )
+
+    class _FailSecondCycleSession(CycleSession):
+        def start_implementation(self, prompt: str):
+            calls["impl"] += 1
+            if calls["impl"] >= 2:
+                raise AgentRunError(
+                    "implementation run failed: agent=a run=r: tests failed",
+                    kind=RunFailureKind.RUN,
+                    exit_code=2,
+                    result_detail="tests failed",
+                    phase="implementation",
+                )
+            agent = _FakeAgent()
+            self._agent = agent
+            self.implementation = SendRunResult(
+                agent_id=agent.agent_id,
+                run_id=f"{agent.agent_id}-run-1",
+                status="finished",
+            )
+            return self.implementation
+
+        def run_update(self, prompt: str):
+            on_update(prompt)
+            self.update = SendRunResult(
+                agent_id=self._agent.agent_id,  # type: ignore[union-attr]
+                run_id=f"{self._agent.agent_id}-run-2",  # type: ignore[union-attr]
+                status="finished",
+            )
+            return self.update
+
+    with pytest.raises(AgentRunError):
+        run_cycles(
+            cfg,
+            get_next_task_fn=lambda _root, tag=None: _next_task(8),
+            router=_router(),
+            session_factory=lambda **kwargs: _FailSecondCycleSession(
+                project_root=project_tree,
+                model=kwargs["model"],
+            ),
+        )
+
+    result = read_history(project_tree / ".cyclopsctl" / "run-history.json")
+    assert result.kind == "ok"
+    assert result.history is not None
+    assert result.history.completed_cycle_task_ids == [8]
+    assert result.history.last_handover_task_id == 9
+
+
 def test_multi_invocation_resume_after_successful_run(project_tree: Path):
     cfg = _config(project_tree)
 
