@@ -114,7 +114,7 @@ Task planning and workflow rules live in your prompt files. The update agent mar
 - **`cursor-sdk`** — installed automatically with this package
 - A project with **`prd.md`** — `cyclopsctl init` creates the required workflow files (`current-handover-prompt.md`, `update-handover-prompt.md`, `ai-context.md`) when they're missing
 
-On **Windows**, the Cursor SDK bridge is bootstrapped automatically when needed.
+On **Windows**, cyclopsctl bootstraps the Cursor SDK bridge automatically (`managed_sdk_bridge`) for `launch`, `run`, `init`, `bootstrap`, `models`, and `analyze-complexity`. This avoids Python 3.11 crashes when `cursor-sdk` auto-launches its local bridge (`os.get_blocking` / pipe discovery).
 
 Task state lives under `.cyclopsctl/tasks/` and `.cyclopsctl/reports/`. Use `cyclopsctl tasks` to inspect and manage the queue.
 
@@ -130,6 +130,7 @@ Task state lives under `.cyclopsctl/tasks/` and `.cyclopsctl/reports/`. Use `cyc
 | `cyclopsctl launch` | Preflight + Rich menu, spawn `run` |
 | `cyclopsctl init` | Scaffold `cyclopsctl.toml`, workflow stubs, `.gitignore` |
 | `cyclopsctl bootstrap` | PRD → parse → analyze → sync handover |
+| `cyclopsctl analyze-complexity` | Score pending tasks on the active tag (no PRD parse) |
 | `cyclopsctl run` | Run N verified implement → update cycles |
 | `cyclopsctl doctor` / `check` | Preflight diagnostics |
 | `cyclopsctl tasks` | Task queue CRUD: `list`, `list pending` / `done`, `show`, `next`, `set-status` |
@@ -159,6 +160,24 @@ Shared flags on most commands: `--no-env`, `--config`, `--project-root` (default
 | `--sync-handover-only` | Regenerate handover from existing tasks |
 | `--skip-analyze` | Skip complexity analysis after parse-prd |
 | `--append` | Append tasks when re-parsing PRD |
+
+### `analyze-complexity`
+
+Score pending tasks via Cursor SDK and write `.cyclopsctl/reports/complexity-report.json`. Does **not** parse a PRD — use after a new phase tag when tasks lack complexity, or when `init` refuses with *PRD changed — run `cyclopsctl launch`*.
+
+```bash
+cyclopsctl tasks use-tag phase-2   # if needed
+cyclopsctl analyze-complexity
+```
+
+| Flag | Description |
+|------|-------------|
+| `--project-root PATH` | Target repository (default: cwd) |
+| `--tag NAME` | Tag to analyze (default: active tag) |
+| `--analyze-model MODEL` | Override analyze model (default: `auto`) |
+| `--skip-if-exists` | Skip when complexity report already exists |
+
+By default this command **re-runs** analysis and replaces a stale report (e.g. from a prior phase). See [`docs/cli/analyze-complexity-cli.md`](docs/cli/analyze-complexity-cli.md).
 
 ### `run`
 
@@ -201,7 +220,7 @@ Shared flags: `--project-root`, `--tag`, `--format json|plain`. Full reference: 
 ### Tags, phases, and profiles
 
 - **Tags** group tasks by phase. Pass `--tag NAME` on `run` / `launch`, or set `tag = "..."` in `cyclopsctl.toml`. Inspect and switch with `cyclopsctl tasks tags` / `cyclopsctl tasks use-tag <name>`.
-- **Multi-phase PRDs:** each PRD/phase maps to its own tag. Start the next phase with `cyclopsctl launch --prd prd-phase2.md` and launch parses it into a fresh tag, syncs a clean handover, and keeps the previous phase's tasks as history. See [`docs/cli/launch-prd-change.md`](docs/cli/launch-prd-change.md).
+- **Multi-phase PRDs:** each PRD/phase maps to its own tag. Start the next phase with `cyclopsctl launch --prd prd-phase2.md` — launch parses into a fresh tag, runs complexity scoring (even when a prior-phase report exists), syncs a clean handover, and keeps previous phases as history. If tasks on a new tag have no complexity scores, run `cyclopsctl analyze-complexity` (do not use `init` after a PRD change on a mature project). See [`docs/cli/launch-prd-change.md`](docs/cli/launch-prd-change.md) and [`docs/cli/analyze-complexity-cli.md`](docs/cli/analyze-complexity-cli.md).
 - **Profiles:** named `[profile.solo-default]` tables in `cyclopsctl.toml`; seed via `cyclopsctl init --profile NAME`. CLI flags override profile values.
 
 ### Model routing
@@ -269,6 +288,15 @@ Module-level documentation: [`docs/index.md`](docs/index.md). Agent-oriented ove
 pip install -e ".[dev]"
 python -m pytest
 ```
+
+**Windows:** if `pip install -e .` fails with `WinError 32` (`cyclopsctl.exe` in use), close terminals running cyclopsctl and run:
+
+```powershell
+Get-Process cyclopsctl -ErrorAction SilentlyContinue | Stop-Process -Force
+pip install -e .
+```
+
+While the exe is locked, use `python -m cyclopsctl …` to run the editable build. See [`docs/setup/package-distribution.md`](docs/setup/package-distribution.md#troubleshooting-installs-windows).
 
 For manual validation on a fresh directory or an existing repository, follow [`docs/guides/testing-guide.md`](docs/guides/testing-guide.md). It covers greenfield init → launch, brownfield attach/continue scenarios, and automated pytest regression.
 

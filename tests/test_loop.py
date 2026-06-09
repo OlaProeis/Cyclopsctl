@@ -1207,7 +1207,7 @@ def test_run_cycles_clears_state_on_success(project_tree: Path):
     assert not state_path.is_file()
 
 
-def test_run_cycles_leaves_state_on_agent_failure(project_tree: Path):
+def test_run_cycles_marks_state_failed_on_agent_failure(project_tree: Path):
     state_path = project_tree / ".cyclopsctl" / "state.json"
     cfg = _config(project_tree, cycles=2)
 
@@ -1227,7 +1227,10 @@ def test_run_cycles_leaves_state_on_agent_failure(project_tree: Path):
     result = read_state(state_path)
     assert result.kind == "ok"
     assert result.state is not None
-    assert result.state.status is RunStateStatus.RUNNING
+    assert result.state.status is RunStateStatus.FAILED
+    assert result.state.phase == "implementation"
+    assert result.state.last_event == "implementation failed"
+    assert result.state.agent_id is not None
 
 
 def test_run_cycles_no_state_when_disabled(project_tree: Path):

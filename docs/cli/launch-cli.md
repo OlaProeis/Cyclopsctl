@@ -30,14 +30,15 @@ Launch-only flags: `--action`, `--profile`, `--composer-tier`, `--no-opus`, `--c
 
 1. Load `LaunchConfig` (defaults `project_root` to `cwd` when omitted).
 2. Load project-root `.env` unless `--no-env`.
-3. Run extended diagnostics via `run_launch_diagnostics` (doctor checks plus update-handover, ai-context, and pending-task list).
-4. Print Rich launch overview (TTY) or plain checklist (non-TTY / `--plain`): active tag, pending count, queue next, handover task ID, suggested cycles.
-5. For **Run** (default on TTY): detect PRD changes and optionally create a new tag (see [launch-prd-change.md](launch-prd-change.md)).
-6. **Auto-repair handover** when the active queue has pending tasks and handover is missing, has no `# Task ID:` marker, is placeholder `# Task ID: 0`, or is out of sync with `cyclopsctl tasks next` — calls `sync_current_handover` and prints one line: `Synced handover for task N — <title>`.
-7. Ask **Number of cycles** (default `min(pending, 5)`), **Use Opus on high-complexity tasks (complexity 9-10)?** (default from `cyclopsctl.toml` / profile), and confirm `Start N cycles on task M? [Y/n]` (default yes). Skip the Opus question when `--no-opus` is passed.
-8. Infer fresh/resume, strict-handover, profile, and composer tier from `cyclopsctl.toml`, run history, and optional CLI flags — not prompted in the default flow.
-9. Block spawn if any preflight check failed.
-10. Assemble `cyclopsctl run` argv and delegate via `_dispatch_launch_argv`.
+3. On **Windows**, enter `managed_sdk_bridge` for the full launch session (PRD parse/analyze and any dispatched subcommand) when bridge env vars are unset — see [launch-prd-change.md](launch-prd-change.md#windows-sdk-bridge).
+4. Run extended diagnostics via `run_launch_diagnostics` (doctor checks plus update-handover, ai-context, and pending-task list).
+5. Print Rich launch overview (TTY) or plain checklist (non-TTY / `--plain`): active tag, pending count, queue next, handover task ID, suggested cycles.
+6. For **Run** (default on TTY): detect PRD changes and optionally create a new tag (see [launch-prd-change.md](launch-prd-change.md)).
+7. **Auto-repair handover** when the active queue has pending tasks and handover is missing, has no `# Task ID:` marker, is placeholder `# Task ID: 0`, or is out of sync with `cyclopsctl tasks next` — calls `sync_current_handover` and prints one line: `Synced handover for task N — <title>`.
+8. Ask **Number of cycles** (default `min(pending, 5)`), **Use Opus on high-complexity tasks (complexity 9-10)?** (default from `cyclopsctl.toml` / profile), and confirm `Start N cycles on task M? [Y/n]` (default yes). Skip the Opus question when `--no-opus` is passed.
+9. Infer fresh/resume, strict-handover, profile, and composer tier from `cyclopsctl.toml`, run history, and optional CLI flags — not prompted in the default flow.
+10. Block spawn if any preflight check failed.
+11. Assemble `cyclopsctl run` argv and delegate via `_dispatch_launch_argv`.
 
 Power users reach bootstrap, doctor, and models via `--action` (no action menu on the default TTY path).
 

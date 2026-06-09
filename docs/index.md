@@ -50,7 +50,7 @@
 ## Runtime
 - `runtime/model-routing.md` - Complexity report lookup, optional `[routing]` TOML/JSON rules, composer tier, Opus gating, and `ModelRouter`.
 - `runtime/model-discovery.md` - `Cursor.models.list()` wrapper, Composer tier selection (standard/fast), Opus preset detection, and `ModelCapabilities`.
-- `runtime/agent-session.md` - SDK `create`/`send`/`wait` wrapper, error classification, and per-cycle `CycleSession`.
+- `runtime/agent-session.md` - SDK `create`/`send`/`wait` wrapper, error classification, per-cycle `CycleSession`, and the Windows SDK bridge bootstrap with its env-fallback default client (fixes `missing_api_key` on `run.wait()`).
 - `runtime/cycle-orchestration.md` - Main implement → update run loop, verification gating, and CLI wiring for `cyclopsctl run`.
 - `runtime/structured-logging.md` - Per-cycle text/JSONL logging, `CycleLogger`, and error context helpers.
 - `runtime/cycle-dashboard.md` - Rich live terminal dashboard, live agent activity streaming (prose coalescing, width-aware wrap), `RunDashboardState`, `RichCycleLogger`, and `managed_cycle_display`.
@@ -59,7 +59,8 @@
 - `runtime/post-run-summary.md` - Post-run Rich/plain summary table of verified cycle outcomes and resume-skipped tasks after Live teardown.
 - `runtime/run-observability.md` - `cyclopsctl run --dry-run`, optional per-cycle git diff summaries, transcript JSON sidecars, and extended post-run/JSONL fields.
 - `runtime/graceful-interrupt.md` - SIGINT handling, cooperative shutdown, exit code 130, and Rich Live teardown during `cyclopsctl run`.
-- `runtime/crash-recovery-state.md` - Atomic `.cyclopsctl/state.json` persistence, `cyclopsctl status`, and post-crash inspection lifecycle.
+- `runtime/crash-recovery-state.md` - Atomic `.cyclopsctl/state.json` persistence, `cyclopsctl status`, `failed` status on agent failure, and post-crash inspection lifecycle.
+- `runtime/failure-diagnostics.md` - Actionable `AgentRunError` report on exit: result detail, resolved local transcript path (`encode_project_slug`), `AgentRunError.phase`, and `failed` state persistence.
 - `runtime/run-history.md` - Cross-invocation `.cyclopsctl/run-history.json`, cycle-1 handover vs bootstrap prompt selection, `--fresh`, `--resume` task-level skip of completed parent tasks, and handover validation (history warns only; does not gate handover use).
 - `runtime/transient-retry.md` - Optional `--retry-on transient` for SDK send/wait blips, backoff config, and non-retryable failure boundaries.
 
@@ -67,7 +68,8 @@
 - `cli/model-inspection-cli.md` - `cyclopsctl models` diagnostic subcommand and routing preset report.
 - `cli/doctor-cli.md` - `cyclopsctl doctor` / `check` preflight diagnostics, native checks, remediation hints, `--fix` stub `.env`, exit codes, and Rich/plain output.
 - `cli/launch-cli.md` - Default `cyclopsctl` / `cyclopsctl launch` cycles-only TTY flow, auto handover repair, inferred resume/routing from config, power-user `--action` dispatch, and internal `run` spawn.
-- `cli/launch-prd-change.md` - Path-aware PRD-change detection at launch (`--prd` for new phase files or in-place `prd.md` edits), new tag creation, parse/analyze/handover sync, tag naming, phase-complete nudge, and the bootstrap/init destructive-reparse guards.
+- `cli/analyze-complexity-cli.md` - `cyclopsctl analyze-complexity` standalone scoring for the active tag (no PRD parse); recovery when phase tags lack scores; `--skip-if-exists` and Windows SDK bridge.
+- `cli/launch-prd-change.md` - Path-aware PRD-change detection at launch (`--prd` for new phase files or in-place `prd.md` edits), new tag creation, forced analyze on new tags, parse/analyze/handover sync, tag naming, phase-complete nudge, Windows SDK bridge on launch, and the bootstrap/init destructive-reparse guards.
 - `cli/launch-attach-readiness.md` - Relaxed `cyclopsctl launch` readiness for attach repos: toml + non-empty tasks + repairable handover (no PRD/last-parsed), `prepare_launch_workspace`, and attach-aware doctor remediation.
 
 ## Testing

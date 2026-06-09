@@ -157,7 +157,7 @@ Fixture: `brownfield-prd-change` — `last-parsed-prd.json` hash differs from cu
 cyclopsctl launch
 ```
 
-**Expect:** Launch detects PRD change, offers new tag / re-parse flow (confirm on TTY).
+**Expect:** Launch detects PRD change, offers new tag / re-parse flow (confirm on TTY). New tag tasks should have complexity scores after parse (launch forces analyze even when a prior-phase report exists). If scores are missing on an older install, run `cyclopsctl analyze-complexity` — see [`docs/cli/analyze-complexity-cli.md`](../cli/analyze-complexity-cli.md).
 
 ### B3. Resume after partial run
 

@@ -70,6 +70,7 @@ class NativeTaskBackend:
         *,
         tag: str | None = None,
         analyze_model: str | None = None,
+        skip_if_exists: bool = True,
     ) -> None:
         from cyclopsctl.tasks.analyze import (
             AnalyzeComplexityConfig,
@@ -82,6 +83,7 @@ class NativeTaskBackend:
             tag=tag,
             config=AnalyzeComplexityConfig(
                 analyze_model=analyze_model or DEFAULT_ANALYZE_MODEL,
+                skip_if_exists=skip_if_exists,
             ),
         )
 

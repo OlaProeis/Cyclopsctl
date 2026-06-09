@@ -41,7 +41,7 @@ from cyclopsctl.tasks.cli import (
     get_task_by_id,
     list_pending_task_results,
 )
-from cyclopsctl.tasks.types import NextTaskLookup
+from cyclopsctl.tasks.types import NextTaskLookup, NextTaskResult
 from cyclopsctl.task_selection import (
     GetTaskByIdFn,
     ListPendingTasksFn,
@@ -56,7 +56,7 @@ from cyclopsctl.runner import (
     should_retry_transient_failure,
     should_retry_with_composer_after_opus_failure,
 )
-from cyclopsctl.state import RunStateTracker
+from cyclopsctl.state import RunStateStatus, RunStateTracker
 from cyclopsctl.git_summary import capture_cycle_git_diff_summary, capture_git_head
 from cyclopsctl.transcript_export import write_transcript_sidecar
 from cyclopsctl.verify import (
@@ -209,6 +209,31 @@ def _raise_if_interrupted(
 
 
 _IMPLEMENTATION_OPUS_FALLBACK_ATTEMPTS = 2
+
+
+def _persist_phase_failure(
+    state_tracker: RunStateTracker | None,
+    *,
+    config: CyclopsctlConfig,
+    cycle_number: int,
+    task: NextTaskResult,
+    exc: AgentRunError,
+    phase: str,
+) -> None:
+    """Record agent/run ids and a ``failed`` status when a phase errors."""
+    if state_tracker is None:
+        return
+    state_tracker.persist(
+        cycle_number=cycle_number,
+        total_cycles=config.cycles,
+        phase=phase,
+        last_event=f"{phase} failed",
+        task_id=task.numeric_id,
+        task_title=task.title,
+        agent_id=exc.agent_id,
+        run_id=exc.run_id,
+        status=RunStateStatus.FAILED,
+    )
 
 
 def _run_implementation_phase(
@@ -495,19 +520,30 @@ def _run_single_cycle(
             task_title=selected_task.title,
         )
 
-    session, impl, routing = _run_implementation_phase(
-        config,
-        cycle_index=cycle_index,
-        cycle_number=cycle_number,
-        use_first_prompt_for_cycle_one=use_first_prompt_for_cycle_one,
-        lookup=lookup,
-        handover_fallback_reason=handover_fallback_reason,
-        routing=routing,
-        model_router=model_router,
-        make_session=make_session,
-        log=log,
-        interrupt=interrupt,
-    )
+    try:
+        session, impl, routing = _run_implementation_phase(
+            config,
+            cycle_index=cycle_index,
+            cycle_number=cycle_number,
+            use_first_prompt_for_cycle_one=use_first_prompt_for_cycle_one,
+            lookup=lookup,
+            handover_fallback_reason=handover_fallback_reason,
+            routing=routing,
+            model_router=model_router,
+            make_session=make_session,
+            log=log,
+            interrupt=interrupt,
+        )
+    except AgentRunError as exc:
+        _persist_phase_failure(
+            state_tracker,
+            config=config,
+            cycle_number=cycle_number,
+            task=selected_task,
+            exc=exc,
+            phase="implementation",
+        )
+        raise
     try:
         guard_result = guard_handover_files_after_implementation(
             current_handover_path=config.current_handover,
@@ -657,6 +693,16 @@ def _run_single_cycle(
                 agent_id=update.agent_id,
                 run_id=update.run_id,
             )
+    except AgentRunError as exc:
+        _persist_phase_failure(
+            state_tracker,
+            config=config,
+            cycle_number=cycle_number,
+            task=selected_task,
+            exc=exc,
+            phase="update",
+        )
+        raise
     finally:
         session.__exit__(None, None, None)
 

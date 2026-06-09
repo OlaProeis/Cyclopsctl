@@ -6,15 +6,16 @@ Score pending native parent tasks for model routing and handover display using o
 
 | Surface | Location |
 |---------|----------|
+| **CLI** | `cyclopsctl analyze-complexity` — analyze only; see [analyze-complexity-cli.md](../cli/analyze-complexity-cli.md) |
 | Backend API | `NativeTaskBackend.analyze_complexity()` → `analyze_complexity_with_cursor()` |
 | Core module | `src/cyclopsctl/tasks/analyze.py` |
 | Prompt template | `src/cyclopsctl/templates/analyze-complexity-prompt.md` |
-| Report path | `.cyclopsctl/reports/complexity-report.json` |
-| Tests | `tests/test_analyze.py` |
+| Report path | `.cyclopsctl/reports/complexity-report.json` (single file per project; replaced on new-phase analyze) |
+| Tests | `tests/test_analyze.py`, `tests/test_cli_analyze_complexity.py` |
 
 ## Flow
 
-1. Skip when `skip_analyze=True` or when a report already exists (`skip_if_exists=True`, default).
+1. Skip when `skip_analyze=True` or when a report already exists and `skip_if_exists=True`. **Defaults:** pipeline callers (`bootstrap`, `init` repair) skip if the report exists; **`cyclopsctl analyze-complexity`** and **launch PRD-change** pass `skip_if_exists=False` so new tags always get scored.
 2. Load non-done parent tasks via `list_pending_tasks()` for the active tag.
 3. Batch tasks: one agent call when count ≤ 15; larger queues split into 15-task chunks.
 4. Render template with `{{TASKS_JSON}}` (id, title, description, details per task).

@@ -37,7 +37,7 @@ jobs:
                   n for n in zf.namelist() if n.endswith(".dist-info/METADATA")
               )
               metadata = zf.read(metadata_name).decode()
-          assert "Version: 0.1.0" in metadata or "Version:" in metadata
+          assert "Version: 0.1.1" in metadata or "Version:" in metadata
           assert "License:" in metadata or "License-Expression:" in metadata
           print(f"Verified metadata in {wheel.name}")
           PY

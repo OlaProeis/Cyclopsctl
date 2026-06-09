@@ -34,7 +34,7 @@ When a changed PRD is detected on a mature project:
 2. `NativeTaskBackend.add_tag` (skipped when `--tag` names an existing tag)
 3. `NativeTaskBackend.use_tag`
 4. Parse PRD via Cursor SDK for the new tag
-5. Analyze complexity for the new tag
+5. Analyze complexity for the new tag (**always** re-runs; `skip_if_exists=False` so a prior-phase `complexity-report.json` does not block scoring)
 6. Refresh workflow files from PRD (`force_workflow=True`)
 7. Sync `current-handover-prompt.md` for the first pending task
 8. Update `.cyclopsctl/last-parsed-prd.json`
@@ -62,6 +62,19 @@ When the active tag's queue has **no pending tasks**, launch prints a hint to st
 - `cyclopsctl bootstrap` (`run_bootstrap`) refuses a destructive replace when the target tag already has tasks and the PRD source changed (path or hash), unless `--append` is set or a fresh `--tag` is targeted. It directs the user to `cyclopsctl launch --prd <file>`.
 
 Launch owns new-tag creation.
+
+## Complexity missing on a new tag?
+
+If tasks on a new phase tag have no `complexity` column and routing falls back to default Composer:
+
+1. Confirm the active tag: `cyclopsctl tasks tags` / `cyclopsctl tasks use-tag <name>`.
+2. Run **`cyclopsctl analyze-complexity`** — see [analyze-complexity-cli.md](analyze-complexity-cli.md).
+
+Do **not** use `cyclopsctl init` after a PRD change on a mature project; init refuses with *PRD changed — run `cyclopsctl launch`*. Do **not** use `cyclopsctl bootstrap` for analyze-only — it re-parses the PRD.
+
+## Windows SDK bridge
+
+`cyclopsctl launch` wraps the interactive flow (including PRD parse/analyze) in `managed_sdk_bridge` on Windows when `CURSOR_SDK_BRIDGE_URL` is unset. This avoids `cursor-sdk` auto-launch failures on Python 3.11 (`os.get_blocking` / pipe discovery). Same bridge bootstrap applies to `run`, `init`, `bootstrap`, `models`, and `analyze-complexity`.
 
 ## Implementation
 

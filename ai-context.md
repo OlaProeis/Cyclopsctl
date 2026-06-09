@@ -95,7 +95,9 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 | `launcher` | Interactive pre-run setup (`cyclopsctl` / `launch`), PRD-change detection, auto handover repair, cycles-only default prompt, inferred resume/routing, `LaunchDispatch` argv assembly |
 | `alignment` | Pre-agent handover Task ID vs selected task (warn / strict) |
 | `verify` | Pre/post update snapshot compare |
-| `runner` | SDK agent lifecycle, run wait, activity stream parsing (`TodoWrite` / `todo_write` plan updates + activity lines), error handling, transient-failure classification |
+| `runner` | SDK agent lifecycle, run wait, activity stream parsing (`TodoWrite` / `todo_write` plan updates + activity lines), error handling (`AgentRunError` carries `phase`), transient-failure classification |
+| `sdk_bridge` | Windows `cursor-sdk-bridge` bootstrap (blocking discovery); installs an env-fallback default `Client` so run-scoped RPCs (`wait`/`observe`/`cancel`) authenticate |
+| `failure_report` | Actionable `AgentRunError` report: project-slug → local transcript path resolution, stderr report formatting |
 | `session` | New agent per implementation; same agent for update |
 | `loop` | Main cycle orchestration; optional transient retry; calls verify after each update |
 | `interrupt` | SIGINT controller, `RunInterruptedError`, exit code 130 |
@@ -159,6 +161,8 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 | Model inspection CLI | `cyclopsctl models`, `docs/cli/model-inspection-cli.md` |
 | Complexity routing | `src/cyclopsctl/routing.py`, `docs/runtime/model-routing.md` |
 | Agent create/send/wait | `src/cyclopsctl/runner.py`, `docs/runtime/agent-session.md` |
+| Windows SDK bridge / env-fallback client | `src/cyclopsctl/sdk_bridge.py`, `docs/runtime/agent-session.md` |
+| Agent run failure diagnostics (report + transcript path) | `src/cyclopsctl/failure_report.py`, `cli.py` (`_log_and_exit_agent_run`), `loop.py` (`_persist_phase_failure`), `docs/runtime/failure-diagnostics.md` |
 | Per-cycle session | `src/cyclopsctl/session.py`, `docs/runtime/agent-session.md` |
 | Run loop / cycle orchestration | `src/cyclopsctl/loop.py`, `docs/runtime/cycle-orchestration.md` |
 | Graceful Ctrl+C interrupt | `src/cyclopsctl/interrupt.py`, `docs/runtime/graceful-interrupt.md` |
@@ -182,3 +186,6 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 - `resolve_project_root()` in `config.py` defaults CLI project root to cwd when `--project-root` is omitted.
 - `workflow_gen.py` staleness heuristics flag outdated workflow refs; `cyclopsctl init --refresh-workflow` regenerates stale files — see `docs/workflow/workflow-refresh.md`.
 - Manual validation: `docs/guides/testing-guide.md` (fresh + existing repo); pytest regression in `test_fresh_repo_integration.py` and `test_brownfield_integration.py`.
+- `AgentRunError` carries `phase`; `cli._log_and_exit_agent_run` prints an actionable report (result detail + resolved local transcript path via `failure_report.encode_project_slug`).
+- On `AgentRunError` the loop persists `RunStateStatus.FAILED` with agent/run ids (`_persist_phase_failure`); `cyclopsctl status` shows the failed phase.
+- Windows bridge: `sdk_bridge.install_env_fallback_default_client` installs a `Client(allow_api_key_env_fallback=True)` so `run.wait()` doesn't fail with `missing_api_key` on caller-supplied bridges.

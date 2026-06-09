@@ -5,7 +5,7 @@ The cyclopsctl ships as **`cyclopsctl`** on PyPI (or from git/local via `pip`). 
 ## Version reporting
 
 - `cyclopsctl --version` prints the installed distribution version via `importlib.metadata` (`src/cyclopsctl/version.py`).
-- `cyclopsctl.version.get_package_version()` falls back to `0.1.0` when the package is not installed (editable dev without metadata).
+- `cyclopsctl.version.get_package_version()` falls back to `0.1.1` when the package is not installed (editable dev without metadata).
 
 ## Shell installers
 
@@ -25,7 +25,7 @@ Both scripts:
 ```powershell
 .\install.ps1
 .\install.ps1 -Source local
-.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.0"
+.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.1"
 ```
 
 ```bash
@@ -70,6 +70,34 @@ Wheel `METADATA` must include `Version` and `License` (or `License-Expression`).
 3. Upload to PyPI via `PYPI_API_TOKEN` secret
 
 Manual publish (without CI): build with `python -m build`, then `twine upload dist/*`.
+
+## Troubleshooting installs (Windows)
+
+### `WinError 32` — `cyclopsctl.exe` in use during `pip install`
+
+Pip cannot replace the console script while another process holds `cyclopsctl.exe` open (an active terminal session, IDE task, or a running `cursor-sdk-bridge` child).
+
+1. Close terminals where `cyclopsctl` is running or was last invoked.
+2. Stop any process still using the script:
+
+```powershell
+Get-Process cyclopsctl -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+
+If the lock persists, find the holder by path (run PowerShell **as Administrator** if `OpenFiles` is disabled):
+
+```powershell
+openfiles /query /fo table | findstr /i cyclopsctl
+# then: Stop-Process -Id <PID> -Force
+```
+
+3. Retry install from the dev repo:
+
+```powershell
+pip install -e G:\DEV\CursorOrchestrator
+```
+
+**While developing:** `python -m cyclopsctl …` uses the editable source without rewriting `Scripts\cyclopsctl.exe` — useful when pip upgrade is blocked.
 
 ## Tests
 

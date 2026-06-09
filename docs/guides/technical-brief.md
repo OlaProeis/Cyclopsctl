@@ -38,6 +38,10 @@ The recommended user path is **install → init → bootstrap → launch**:
 │   cyclopsctl bootstrap --from-prd prd.md [--with-workflow]     │
 │   → parse-prd, analyze-complexity, sync # Task ID in handover    │
 ├──────────────────────────────────────────────────────────────────┤
+│ ANALYZE ONLY (new phase tag missing scores)                      │
+│   cyclopsctl analyze-complexity [--tag phase-N]                │
+│   → complexity report + task backfill (no PRD parse)             │
+├──────────────────────────────────────────────────────────────────┤
 │ LAUNCH / RUN                                                     │
 │   cyclopsctl launch  (default `cyclopsctl` command)          │
 │   OR cyclopsctl run --config cyclopsctl.toml --cycles N      │
@@ -207,6 +211,7 @@ cyclopsctl                    # default: launch
 cyclopsctl launch             # preflight + menu → run
 cyclopsctl init               # scaffold config + workflow stubs
 cyclopsctl bootstrap          # PRD → tasks → complexity → handover sync
+cyclopsctl analyze-complexity # score pending tasks on active tag (no parse)
 cyclopsctl run                # N implement → update cycles
 cyclopsctl doctor | check     # preflight diagnostics
 cyclopsctl status             # crash-recovery + history summary

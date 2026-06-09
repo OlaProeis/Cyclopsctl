@@ -19,6 +19,7 @@ class RunStateStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     INTERRUPTED = "interrupted"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,12 @@ def format_state_summary(result: StateReadResult) -> str:
     if state.status is RunStateStatus.RUNNING:
         lines.append(
             "Note: status is 'running'; the process may still be active or may have crashed."
+        )
+    elif state.status is RunStateStatus.FAILED:
+        phase = state.phase or "the run"
+        lines.append(
+            f"Note: the last run failed during {phase}; "
+            "inspect the agent transcript for details."
         )
     return "\n".join(lines)
 

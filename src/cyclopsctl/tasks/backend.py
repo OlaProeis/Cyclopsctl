@@ -123,6 +123,7 @@ class TaskBackend(Protocol):
         *,
         tag: str | None = None,
         analyze_model: str | None = None,
+        skip_if_exists: bool = True,
     ) -> None: ...
 
     def list_pending(

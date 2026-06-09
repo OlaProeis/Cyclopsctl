@@ -85,17 +85,55 @@ def test_launch_bridge_for_windows_sets_env(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CURSOR_SDK_BRIDGE_URL", raising=False)
     monkeypatch.delenv("CURSOR_SDK_BRIDGE_TOKEN", raising=False)
     process = _FakeProcess()
+    install_calls: list[dict[str, str]] = []
+
+    def _fake_install(**kwargs: str) -> object:
+        install_calls.append(kwargs)
+        return object()
 
     bridge = launch_bridge_for_windows(
         tmp_path,
         resolve_bridge_path=lambda: "/bin/cursor-sdk-bridge",
         popen=lambda *_args, **_kwargs: process,
+        install_client=_fake_install,
     )
 
     assert bridge.url == "http://127.0.0.1:8765"
     assert bridge.auth_token == "bridge-token"
     assert os.environ["CURSOR_SDK_BRIDGE_URL"] == bridge.url
     assert os.environ["CURSOR_SDK_BRIDGE_TOKEN"] == bridge.auth_token
+    assert install_calls == [
+        {"url": "http://127.0.0.1:8765", "auth_token": "bridge-token"}
+    ]
+    assert bridge.client is not None
+
+
+def test_install_env_fallback_default_client_uses_env_fallback(monkeypatch):
+    import cursor_sdk
+    from cursor_sdk import _client as sdk_client
+
+    import cyclopsctl.sdk_bridge as sdk_bridge
+
+    captured: dict[str, object] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(cursor_sdk, "Client", _FakeClient)
+    monkeypatch.setattr(sdk_client, "_DEFAULT_CLIENT", None, raising=False)
+
+    client = sdk_bridge.install_env_fallback_default_client(
+        url="http://127.0.0.1:8765",
+        auth_token="bridge-token",
+    )
+
+    assert captured == {
+        "base_url": "http://127.0.0.1:8765",
+        "auth_token": "bridge-token",
+        "allow_api_key_env_fallback": True,
+    }
+    assert sdk_client._DEFAULT_CLIENT is client
 
 
 def test_launch_bridge_for_windows_raises_when_process_exits_early(tmp_path: Path):
@@ -239,6 +277,36 @@ def test_cli_init_dry_run_skips_managed_bridge(greenfield_root: Path):
 
     assert code == 0
     mock_bridge.assert_not_called()
+
+
+def test_cli_launch_uses_managed_bridge(project_tree: Path, monkeypatch: pytest.MonkeyPatch):
+    from cyclopsctl.cli import main
+    from cyclopsctl.launcher import LaunchDispatch
+
+    monkeypatch.setenv("CURSOR_API_KEY", "test-api-key")
+
+    with patch("cyclopsctl.cli.managed_sdk_bridge") as mock_bridge:
+        mock_bridge.return_value.__enter__ = MagicMock(return_value=None)
+        mock_bridge.return_value.__exit__ = MagicMock(return_value=False)
+        with patch(
+            "cyclopsctl.cli.run_launch",
+            return_value=LaunchDispatch(action=None, argv=None, exit_code=0),
+        ) as mock_launch:
+            code = main(
+                [
+                    "launch",
+                    "--project-root",
+                    str(project_tree),
+                    "--cycles",
+                    "1",
+                    "--yes",
+                ]
+            )
+
+    assert code == 0
+    mock_bridge.assert_called_once_with(project_tree.resolve())
+    mock_launch.assert_called_once()
+    assert "bridge_manager" in mock_launch.call_args.kwargs
 
 
 def test_cli_bootstrap_uses_managed_bridge(project_tree: Path, monkeypatch: pytest.MonkeyPatch):

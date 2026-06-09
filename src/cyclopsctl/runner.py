@@ -119,6 +119,7 @@ class AgentRunError(RuntimeError):
         agent_id: str | None = None,
         run_id: str | None = None,
         result_detail: str | None = None,
+        phase: str | None = None,
         cause: BaseException | None = None,
     ) -> None:
         super().__init__(message)
@@ -127,6 +128,7 @@ class AgentRunError(RuntimeError):
         self.agent_id = agent_id
         self.run_id = run_id
         self.result_detail = result_detail
+        self.phase = phase
         self.cause = cause
 
 
@@ -621,6 +623,7 @@ def create_local_agent(
             f"Agent startup failed: {exc}",
             kind=RunFailureKind.STARTUP,
             exit_code=STARTUP_EXIT_CODE,
+            phase="startup",
             cause=exc,
         ) from exc
 
@@ -653,6 +656,7 @@ def send_and_wait(
             kind=RunFailureKind.STARTUP,
             exit_code=STARTUP_EXIT_CODE,
             agent_id=agent.agent_id,
+            phase=phase,
             cause=exc,
         ) from exc
 
@@ -672,6 +676,7 @@ def send_and_wait(
             exit_code=STARTUP_EXIT_CODE,
             agent_id=agent.agent_id,
             run_id=run_id,
+            phase=phase,
             cause=exc,
         ) from exc
 
@@ -696,6 +701,7 @@ def send_and_wait(
             agent_id=agent.agent_id,
             run_id=result.id,
             result_detail=detail or None,
+            phase=phase,
         )
 
     return SendRunResult(

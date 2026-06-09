@@ -18,6 +18,7 @@ from cyclopsctl.config import (
     load_launch_config,
     load_run_config,
     load_status_config,
+    resolve_project_root,
 )
 from cyclopsctl.doctor import run_doctor
 from cyclopsctl.launcher import run_launch
@@ -473,6 +474,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="AI context file path used for handover environment defaults",
     )
 
+    analyze_parser = subparsers.add_parser(
+        "analyze-complexity",
+        parents=[shared, path_flags],
+        help="Score pending tasks for the active tag via Cursor SDK (no PRD parse)",
+    )
+    analyze_parser.add_argument(
+        "--analyze-model",
+        metavar="MODEL",
+        help="Override analyze-complexity model (default: [tasks].analyze_model or auto)",
+    )
+    analyze_parser.add_argument(
+        "--skip-if-exists",
+        action="store_true",
+        help="Skip when complexity-report.json already exists",
+    )
+
     init_parser = subparsers.add_parser(
         "init",
         parents=[shared],
@@ -593,6 +610,30 @@ def _log_and_exit(exc: BaseException, *, message: str, **context: object) -> int
     return code
 
 
+def _log_and_exit_agent_run(exc: AgentRunError, *, project_root: Path) -> int:
+    """Exit on ``AgentRunError`` with an actionable diagnostics report."""
+    from cyclopsctl.failure_report import format_failure_report
+
+    code = exit_code_for(exc)
+    log_error(
+        "Agent run failed",
+        error=str(exc),
+        error_type=type(exc).__name__,
+        exit_code=code,
+        kind=exc.kind.value,
+        phase=exc.phase,
+        agent_id=exc.agent_id,
+        run_id=exc.run_id,
+        result_detail=exc.result_detail,
+    )
+    print(f"cyclopsctl: error: {exc}", file=sys.stderr)
+    print(
+        format_failure_report(exc, project_root=project_root),
+        file=sys.stderr,
+    )
+    return code
+
+
 def _startup_load_env(*, project_root: Path, no_env: bool) -> None:
     """Load project-root ``.env`` before preflight when enabled."""
     if no_env:
@@ -706,13 +747,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     except SdkBridgeError as exc:
         return _log_and_exit(exc, message="Cursor SDK bridge startup failed")
     except AgentRunError as exc:
-        return _log_and_exit(
-            exc,
-            message="Agent run failed",
-            kind=exc.kind.value,
-            agent_id=exc.agent_id,
-            run_id=exc.run_id,
-        )
+        return _log_and_exit_agent_run(exc, project_root=config.project_root)
     except KNOWN_RUN_ERRORS as exc:
         return _log_and_exit(exc, message="Cyclopsctl run failed")
     finally:
@@ -758,6 +793,55 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
             f"Completed {result.completed_cycles} verified cycle(s) at {config.project_root}.{skipped_part}",
             file=sys.stderr,
         )
+    return 0
+
+
+def run_analyze_complexity(
+    project_root: Path,
+    *,
+    tag: str | None = None,
+    analyze_model: str | None = None,
+    skip_if_exists: bool = False,
+) -> int:
+    """Run native complexity analysis for pending tasks on the active tag."""
+    from cyclopsctl.tasks.analyze import (
+        AnalyzeComplexityConfig,
+        AnalyzeComplexityError,
+        analyze_complexity_with_cursor,
+    )
+    from cyclopsctl.tasks.models import DEFAULT_ANALYZE_MODEL
+    from cyclopsctl.tasks.store import native_tasks_storage_exists
+
+    resolved_root = project_root.resolve()
+    if not native_tasks_storage_exists(resolved_root):
+        message = (
+            "no native task storage found — run `cyclopsctl init` or "
+            "`cyclopsctl bootstrap` first"
+        )
+        log_error("Complexity analysis failed", error=message)
+        print(f"cyclopsctl: error: {message}", file=sys.stderr)
+        return STARTUP_EXIT_CODE
+
+    try:
+        ran = analyze_complexity_with_cursor(
+            resolved_root,
+            tag=tag,
+            config=AnalyzeComplexityConfig(
+                analyze_model=analyze_model or DEFAULT_ANALYZE_MODEL,
+                skip_if_exists=skip_if_exists,
+            ),
+        )
+    except AnalyzeComplexityError as exc:
+        return _log_and_exit(exc, message="Complexity analysis failed")
+
+    if not ran:
+        print(
+            "cyclopsctl: complexity analysis skipped "
+            "(no pending tasks or --skip-if-exists)",
+            file=sys.stderr,
+        )
+    else:
+        print("cyclopsctl: complexity analysis complete", file=sys.stderr)
     return 0
 
 
@@ -852,28 +936,33 @@ def _launch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return _log_and_exit(exc, message="Environment loading failed")
 
     opus_enabled = False if args.no_opus else None
-    dispatch = run_launch(
-        config,
-        action=args.action,
-        cycles=args.cycles,
-        plain=True if args.plain else None,
-        strict_handover=True if args.strict_handover else None,
-        fresh=True if args.fresh else None,
-        resume=True if args.resume else None,
-        tag=args.tag,
-        profile=args.profile,
-        composer_tier=args.composer_tier,
-        opus_enabled=opus_enabled,
-        from_prd=args.from_prd,
-        prd=args.prd,
-        skip_analyze=True if args.skip_analyze else None,
-        doctor_fix=True if args.fix else None,
-        assume_yes=args.yes,
-    )
-    if dispatch.argv is None:
-        return dispatch.exit_code
+    try:
+        with managed_sdk_bridge(config.project_root):
+            dispatch = run_launch(
+                config,
+                action=args.action,
+                cycles=args.cycles,
+                plain=True if args.plain else None,
+                strict_handover=True if args.strict_handover else None,
+                fresh=True if args.fresh else None,
+                resume=True if args.resume else None,
+                tag=args.tag,
+                profile=args.profile,
+                composer_tier=args.composer_tier,
+                opus_enabled=opus_enabled,
+                from_prd=args.from_prd,
+                prd=args.prd,
+                skip_analyze=True if args.skip_analyze else None,
+                doctor_fix=True if args.fix else None,
+                assume_yes=args.yes,
+                bridge_manager=managed_sdk_bridge,
+            )
+            if dispatch.argv is None:
+                return dispatch.exit_code
 
-    return _dispatch_launch_argv(dispatch.argv, parser)
+            return _dispatch_launch_argv(dispatch.argv, parser)
+    except SdkBridgeError as exc:
+        return _log_and_exit(exc, message="Cursor SDK bridge startup failed")
 
 
 def _doctor_command(args: argparse.Namespace) -> int:
@@ -907,6 +996,26 @@ def _models_command(args: argparse.Namespace) -> int:
     try:
         with managed_sdk_bridge(Path.cwd()):
             return run_models_inspection()
+    except SdkBridgeError as exc:
+        return _log_and_exit(exc, message="Cursor SDK bridge startup failed")
+
+
+def _analyze_complexity_command(args: argparse.Namespace) -> int:
+    project_root = resolve_project_root(args.project_root)
+
+    try:
+        _startup_load_env(project_root=project_root, no_env=args.no_env)
+    except EnvLoadError as exc:
+        return _log_and_exit(exc, message="Environment loading failed")
+
+    try:
+        with managed_sdk_bridge(project_root):
+            return run_analyze_complexity(
+                project_root,
+                tag=args.tag,
+                analyze_model=args.analyze_model,
+                skip_if_exists=args.skip_if_exists,
+            )
     except SdkBridgeError as exc:
         return _log_and_exit(exc, message="Cursor SDK bridge startup failed")
 
@@ -1028,7 +1137,18 @@ def _init_command(args: argparse.Namespace) -> int:
 
 
 _KNOWN_COMMANDS = frozenset(
-    {"run", "launch", "doctor", "check", "status", "models", "bootstrap", "init", "tasks"}
+    {
+        "run",
+        "launch",
+        "doctor",
+        "check",
+        "status",
+        "models",
+        "bootstrap",
+        "analyze-complexity",
+        "init",
+        "tasks",
+    }
 )
 
 
@@ -1069,6 +1189,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "bootstrap":
         return _bootstrap_command(args)
+
+    if args.command == "analyze-complexity":
+        return _analyze_complexity_command(args)
 
     if args.command == "init":
         return _init_command(args)

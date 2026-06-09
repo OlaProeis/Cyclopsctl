@@ -266,6 +266,64 @@ def test_changed_prd_runs_tag_pipeline_in_order(
     assert prd_hash_changed(root, root / "prd.md") is False
 
 
+def test_changed_prd_forces_analyze_when_prior_report_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "repo"
+    _write_initialized_project(root)
+    report = root / ".cyclopsctl" / "reports" / "complexity-report.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "meta": {"generatedAt": "2026-01-01T00:00:00Z", "tasksAnalyzed": 2},
+                "complexityAnalysis": [
+                    {"taskId": 1, "taskTitle": "Old", "complexityScore": 4},
+                    {"taskId": 2, "taskTitle": "Old", "complexityScore": 6},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "prd.md").write_text("# PRD: Phase 5\n\nUpdated scope.\n", encoding="utf-8")
+
+    captured: list[bool] = []
+
+    def fake_analyze(
+        project_root: Path,
+        *,
+        tag: str | None = None,
+        config=None,
+        **_kwargs: object,
+    ) -> bool:
+        _ = project_root, tag
+        captured.append(config.skip_if_exists)
+        return True
+
+    monkeypatch.setattr(
+        "cyclopsctl.tasks.parse_prd.parse_prd_with_cursor",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "cyclopsctl.tasks.analyze.analyze_complexity_with_cursor",
+        fake_analyze,
+    )
+    config_paths = _launch_config(root)
+
+    handle_launch_prd_change(
+        root,
+        current_handover=config_paths.current_handover,
+        complexity_report=config_paths.complexity_report,
+        ai_context=config_paths.ai_context,
+        assume_yes=True,
+        task_backend="native",
+    )
+
+    assert captured == [False]
+
+
 def test_changed_prd_keeps_prior_tags_intact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

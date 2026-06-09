@@ -865,7 +865,11 @@ def handle_launch_prd_change(
         load_project_env(root)
         resolved_backend.parse_prd(root, resolved_prd, tag=new_tag)
         steps.append("parse-prd")
-        resolved_backend.analyze_complexity(root, tag=new_tag)
+        resolved_backend.analyze_complexity(
+            root,
+            tag=new_tag,
+            skip_if_exists=False,
+        )
         steps.append("analyze-complexity")
 
         workflow_result = generate_workflow_files(
