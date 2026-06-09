@@ -127,9 +127,7 @@ def build_pip_install_argv(
     local_path: Path | None = None,
 ) -> list[str]:
     """Build ``python -m pip install`` arguments for the cyclopsctl package."""
-    if source == "pypi":
-        target = PACKAGE_NAME
-    elif source == "git":
+    if source == "git":
         target = git_url or DEFAULT_GIT_URL
     elif source == "local":
         if local_path is None:
@@ -185,7 +183,7 @@ def verify_installation(
 
 def run_install(
     *,
-    source: str = "pypi",
+    source: str = "git",
     git_url: str | None = None,
     local_path: Path | None = None,
     skip_verify: bool = False,
@@ -253,9 +251,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--source",
-        choices=["pypi", "git", "local"],
-        default="pypi",
-        help="Install source (default: pypi)",
+        choices=["git", "local"],
+        default="git",
+        help="Install source (default: git)",
     )
     parser.add_argument(
         "--git-url",

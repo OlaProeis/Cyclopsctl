@@ -347,7 +347,7 @@ Tests use injectable hooks (`get_next_task_fn`, `session_factory`, `router`, `cy
 
 The built system can:
 
-- **Install** globally via PyPI, git, or shell scripts (`installer.py`)
+- **Install** globally via git `pip install` or shell scripts (`installer.py`)
 - **`init`** scaffold and **`bootstrap`** PRD pipeline with optional workflow generation
 - **`launch`** interactively or **`run`** headlessly with profiles, tags, routing
 - Run N verified implement→update cycles unattended

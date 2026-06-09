@@ -39,6 +39,25 @@ DEFAULT_QUEUE_STRIP_UPCOMING_CAP = 5
 ACTIVITY_REFRESH_INTERVAL_SECONDS = 0.25
 ACTIVITY_PANEL_HORIZONTAL_PADDING = 6
 
+# Phases where an SDK agent run is actively in progress and may go silent
+# for long stretches (e.g. a slow test suite). A heartbeat reassures the
+# user that cyclopsctl has not hung during these windows.
+ACTIVE_RUN_PHASES = frozenset({"implementation", "update"})
+HEARTBEAT_IDLE_THRESHOLD_SECONDS = 15.0
+HEARTBEAT_REFRESH_PER_SECOND = 2
+
+
+def format_elapsed_short(seconds: float) -> str:
+    """Render a duration as a compact human string (``45s``, ``3m 20s``, ``1h 5m``)."""
+    total = int(max(0.0, seconds))
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs}s" if secs else f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+
 
 class StepStatus(str, Enum):
     PENDING = "pending"
@@ -292,6 +311,22 @@ class RunDashboardState:
     step_status: dict[str, StepStatus] = field(
         default_factory=lambda: {key: StepStatus.PENDING for key, _ in STEP_DEFINITIONS}
     )
+    last_activity_monotonic: float | None = None
+    phase_started_monotonic: float | None = None
+
+    def note_activity(self, now: float) -> None:
+        """Record the monotonic time of the most recent agent activity."""
+        self.last_activity_monotonic = now
+
+    def begin_active_phase(self, now: float) -> None:
+        """Mark the start of an active SDK run phase for heartbeat tracking."""
+        self.phase_started_monotonic = now
+        self.last_activity_monotonic = now
+
+    def end_active_phase(self) -> None:
+        """Clear heartbeat tracking once an active run phase finishes."""
+        self.phase_started_monotonic = None
+        self.last_activity_monotonic = None
 
     def clear_activity(self) -> None:
         self.activity_lines.clear()
@@ -359,7 +394,9 @@ class RichCycleLogger(CycleLogger):
     def append_activity(self, line: str) -> None:
         """Record one agent activity line and refresh the dashboard when due."""
         self.state.append_activity(line)
-        self._maybe_refresh_activity()
+        now = self._monotonic()
+        self.state.note_activity(now)
+        self._maybe_refresh_activity(now=now)
 
     def apply_plan_update(
         self,
@@ -368,10 +405,12 @@ class RichCycleLogger(CycleLogger):
     ) -> None:
         """Apply a TodoWrite update and refresh the dashboard when due."""
         self.state.agent_plan.apply_todo_write(todos, merge=merge)
-        self._maybe_refresh_activity()
-
-    def _maybe_refresh_activity(self) -> None:
         now = self._monotonic()
+        self.state.note_activity(now)
+        self._maybe_refresh_activity(now=now)
+
+    def _maybe_refresh_activity(self, *, now: float | None = None) -> None:
+        now = self._monotonic() if now is None else now
         if now - self._last_activity_refresh < self.activity_refresh_interval:
             return
         self._last_activity_refresh = now
@@ -414,6 +453,7 @@ class RichCycleLogger(CycleLogger):
         self.state.reset_steps()
         self.state.set_step("resolve", StepStatus.DONE)
         self.state.set_step("implementation", StepStatus.RUNNING)
+        self.state.begin_active_phase(self._monotonic())
         self._refresh()
         return super().log_cycle_start(
             cycle_number=cycle_number,
@@ -448,6 +488,7 @@ class RichCycleLogger(CycleLogger):
             self.state.phase = "verify"
             self.state.update_status = status
             self.state.set_step("update", StepStatus.DONE)
+        self.state.end_active_phase()
         self._refresh()
         super().log_run_complete(
             cycle_number=cycle_number,
@@ -475,6 +516,7 @@ class RichCycleLogger(CycleLogger):
         if label == "before":
             self.state.phase = "update"
             self.state.set_step("update", StepStatus.RUNNING)
+            self.state.begin_active_phase(self._monotonic())
         elif label == "after":
             self.state.set_step("snapshot", StepStatus.DONE)
             self.state.set_step("verify", StepStatus.RUNNING)
@@ -590,10 +632,38 @@ def render_agent_plan_section(
     return Group(Text("Agent plan", style="bold"), plan)
 
 
+def render_heartbeat(
+    state: RunDashboardState,
+    *,
+    now: float | None = None,
+    idle_threshold: float = HEARTBEAT_IDLE_THRESHOLD_SECONDS,
+) -> Text | None:
+    """Build a 'still running' heartbeat line when an active run has gone quiet.
+
+    Returns ``None`` unless the dashboard is in an active SDK run phase and no
+    new activity has arrived for at least ``idle_threshold`` seconds. This keeps
+    a slow-but-alive run (e.g. a long test suite) from looking hung.
+    """
+    if state.phase not in ACTIVE_RUN_PHASES:
+        return None
+    if state.last_activity_monotonic is None:
+        return None
+    current = time.monotonic() if now is None else now
+    idle = current - state.last_activity_monotonic
+    if idle < idle_threshold:
+        return None
+    message = f"still running - no new activity for {format_elapsed_short(idle)}"
+    if state.phase_started_monotonic is not None:
+        elapsed = current - state.phase_started_monotonic
+        message += f" ({format_elapsed_short(elapsed)} elapsed)"
+    return Text.assemble(("\u23f3 ", "yellow"), (message, "yellow"))
+
+
 def render_dashboard(
     state: RunDashboardState,
     *,
     console_width: int | None = None,
+    now: float | None = None,
 ) -> RenderableType:
     """Build the Rich renderable for the current dashboard state."""
     header = Text.assemble(
@@ -650,6 +720,9 @@ def render_dashboard(
         progress,
         Text(""),
     ]
+    heartbeat = render_heartbeat(state, now=now)
+    if heartbeat is not None:
+        sections.extend([heartbeat, Text("")])
     queue_strip = render_queue_strip_section(state.queue_strip)
     if queue_strip is not None:
         sections.append(queue_strip)
@@ -740,12 +813,17 @@ def managed_cycle_display(
         interrupt.add_callback(stop_live)
 
     def dashboard_renderable() -> RenderableType:
-        return render_dashboard(state, console_width=console.size.width)
+        return render_dashboard(
+            state,
+            console_width=console.size.width,
+            now=time.monotonic(),
+        )
 
     with Live(
         console=console,
         get_renderable=dashboard_renderable,
-        auto_refresh=False,
+        auto_refresh=True,
+        refresh_per_second=HEARTBEAT_REFRESH_PER_SECOND,
         transient=False,
     ) as live_ctx:
         live = live_ctx

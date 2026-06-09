@@ -15,14 +15,17 @@ from cyclopsctl.bootstrap import (
 from cyclopsctl.init_scaffold import run_init_scaffold
 from cyclopsctl.workflow_gen import (
     CYCLOPSCTL_CURSOR_RULES_DIR,
+    CYCLOPSCTL_SKILL_DIR,
     TEMPLATES_DIR,
     WorkflowGenConfig,
     detect_stale_workflow_files,
     generate_workflow_files,
     install_cyclopsctl_cursor_rules,
+    install_cyclopsctl_skill,
     is_generic_workflow_file,
     is_workflow_file_stale,
     cyclopsctl_cursor_rules_present,
+    cyclopsctl_skill_present,
     refresh_stale_workflow_files,
     resolve_workflow_inputs,
     workflow_file_staleness_reasons,
@@ -279,6 +282,33 @@ def test_install_cyclopsctl_cursor_rules_is_idempotent(python_project: Path):
     assert second == ()
 
 
+def test_generate_workflow_files_installs_cyclopsctl_skill(python_project: Path):
+    result = generate_workflow_files(WorkflowGenConfig(project_root=python_project))
+
+    skill_path = python_project / CYCLOPSCTL_SKILL_DIR / "SKILL.md"
+    assert skill_path.is_file()
+    generated = skill_path.read_text(encoding="utf-8")
+    assert "cyclopsctl tasks list pending" in generated
+    assert str(python_project) in generated
+    assert cyclopsctl_skill_present(python_project)
+    assert result.installed_skill_paths == (
+        f"{CYCLOPSCTL_SKILL_DIR.as_posix()}/SKILL.md",
+    )
+
+
+def test_install_cyclopsctl_skill_is_idempotent(python_project: Path):
+    first = install_cyclopsctl_skill(
+        python_project,
+        project_root_value=str(python_project),
+    )
+    second = install_cyclopsctl_skill(
+        python_project,
+        project_root_value=str(python_project),
+    )
+    assert first == (f"{CYCLOPSCTL_SKILL_DIR.as_posix()}/SKILL.md",)
+    assert second == ()
+
+
 def test_generate_workflow_files_includes_project_root_in_update_handover(
     python_project: Path,
 ):
@@ -432,6 +462,7 @@ def test_templates_dir_has_workflow_templates():
     assert (TEMPLATES_DIR / "workflow-ai-context.md").is_file()
     assert (TEMPLATES_DIR / "workflow-update-handover-prompt.md").is_file()
     assert (TEMPLATES_DIR / "cursor-rules/cyclopsctl/agent-workflow.mdc").is_file()
+    assert (TEMPLATES_DIR / "skills/cyclopsctl/SKILL.md").is_file()
 
 
 def test_workflow_file_staleness_detects_missing_native_ai_context_markers():

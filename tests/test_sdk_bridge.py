@@ -34,10 +34,17 @@ class _FakeStderr(StringIO):
 
 
 class _FakeProcess:
-    def __init__(self, *, stderr_text: str = READY_LINE, returncode: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        stderr_text: str = READY_LINE,
+        returncode: int | None = None,
+        pid: int = 4321,
+    ) -> None:
         self.stderr = _FakeStderr(stderr_text)
         self._returncode = returncode
         self.returncode = returncode
+        self.pid = pid
         self.terminated = False
         self.killed = False
 
@@ -56,6 +63,15 @@ class _FakeProcess:
         self.killed = True
         self._returncode = 1
         self.returncode = 1
+
+
+@pytest.fixture(autouse=True)
+def _clear_active_bridges():
+    from cyclopsctl import sdk_bridge
+
+    sdk_bridge._ACTIVE_BRIDGES.clear()
+    yield
+    sdk_bridge._ACTIVE_BRIDGES.clear()
 
 
 def test_bridge_env_configured_requires_url_and_token(monkeypatch):
@@ -107,6 +123,87 @@ def test_launch_bridge_for_windows_sets_env(tmp_path: Path, monkeypatch):
     ]
     assert bridge.client is not None
 
+    from cyclopsctl import sdk_bridge as _sdk_bridge
+
+    assert bridge in _sdk_bridge._ACTIVE_BRIDGES
+
+
+def test_terminate_process_kills_tree_on_windows(monkeypatch):
+    from cyclopsctl import sdk_bridge
+
+    proc = _FakeProcess(returncode=None, pid=4321)
+    calls: list[list[str]] = []
+
+    def _fake_run(args, **kwargs):
+        calls.append(list(args))
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(sdk_bridge.sys, "platform", "win32")
+    monkeypatch.setattr(sdk_bridge.subprocess, "run", _fake_run)
+
+    sdk_bridge._terminate_process(proc)
+
+    assert calls == [["taskkill", "/F", "/T", "/PID", "4321"]]
+    assert proc.terminated is False
+
+
+def test_terminate_process_terminates_on_non_windows(monkeypatch):
+    from cyclopsctl import sdk_bridge
+
+    proc = _FakeProcess(returncode=None, pid=99)
+    run_called = {"value": False}
+
+    monkeypatch.setattr(sdk_bridge.sys, "platform", "linux")
+    monkeypatch.setattr(
+        sdk_bridge.subprocess,
+        "run",
+        lambda *a, **k: run_called.__setitem__("value", True),
+    )
+
+    sdk_bridge._terminate_process(proc)
+
+    assert proc.terminated is True
+    assert run_called["value"] is False
+
+
+def _hermetic_bridge(monkeypatch) -> "ManagedBridge":
+    import cursor_sdk._client
+    import cursor_sdk._connect
+
+    from cyclopsctl import sdk_bridge
+
+    monkeypatch.setattr(sdk_bridge, "_terminate_process", lambda _p: None)
+    monkeypatch.setattr(cursor_sdk._connect, "post_bridge_shutdown", lambda *a, **k: None)
+    monkeypatch.setattr(cursor_sdk._client, "close_default_client", lambda: None)
+    return ManagedBridge(
+        process=_FakeProcess(), url="http://127.0.0.1:9/", auth_token="t"
+    )
+
+
+def test_managed_bridge_close_is_idempotent_and_unregisters(monkeypatch):
+    from cyclopsctl import sdk_bridge
+
+    bridge = _hermetic_bridge(monkeypatch)
+    sdk_bridge._register_active_bridge(bridge)
+
+    bridge.close()
+    assert bridge._closed is True
+    assert bridge not in sdk_bridge._ACTIVE_BRIDGES
+
+    bridge.close()  # second call is a no-op, must not raise
+
+
+def test_atexit_safety_net_closes_open_bridges(monkeypatch):
+    from cyclopsctl import sdk_bridge
+
+    bridge = _hermetic_bridge(monkeypatch)
+    sdk_bridge._register_active_bridge(bridge)
+
+    sdk_bridge._close_active_bridges_atexit()
+
+    assert bridge._closed is True
+    assert sdk_bridge._ACTIVE_BRIDGES == []
+
 
 def test_install_env_fallback_default_client_uses_env_fallback(monkeypatch):
     import cursor_sdk
@@ -123,6 +220,7 @@ def test_install_env_fallback_default_client_uses_env_fallback(monkeypatch):
     monkeypatch.setattr(cursor_sdk, "Client", _FakeClient)
     monkeypatch.setattr(sdk_client, "_DEFAULT_CLIENT", None, raising=False)
 
+    monkeypatch.delenv("CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS", raising=False)
     client = sdk_bridge.install_env_fallback_default_client(
         url="http://127.0.0.1:8765",
         auth_token="bridge-token",
@@ -132,8 +230,45 @@ def test_install_env_fallback_default_client_uses_env_fallback(monkeypatch):
         "base_url": "http://127.0.0.1:8765",
         "auth_token": "bridge-token",
         "allow_api_key_env_fallback": True,
+        "timeout": sdk_bridge.DEFAULT_BRIDGE_TIMEOUT_SECONDS,
     }
     assert sdk_client._DEFAULT_CLIENT is client
+
+
+def test_resolve_bridge_client_timeout_default():
+    from cyclopsctl import sdk_bridge
+
+    assert sdk_bridge.resolve_bridge_client_timeout(env={}) == (
+        sdk_bridge.DEFAULT_BRIDGE_TIMEOUT_SECONDS
+    )
+
+
+def test_resolve_bridge_client_timeout_override():
+    from cyclopsctl import sdk_bridge
+
+    assert sdk_bridge.resolve_bridge_client_timeout(
+        env={"CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS": "120"}
+    ) == 120.0
+
+
+@pytest.mark.parametrize("value", ["0", "none", "off", "disabled"])
+def test_resolve_bridge_client_timeout_disabled(value: str):
+    from cyclopsctl import sdk_bridge
+
+    assert (
+        sdk_bridge.resolve_bridge_client_timeout(
+            env={"CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS": value}
+        )
+        is None
+    )
+
+
+def test_resolve_bridge_client_timeout_invalid_falls_back():
+    from cyclopsctl import sdk_bridge
+
+    assert sdk_bridge.resolve_bridge_client_timeout(
+        env={"CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS": "abc"}
+    ) == sdk_bridge.DEFAULT_BRIDGE_TIMEOUT_SECONDS
 
 
 def test_launch_bridge_for_windows_raises_when_process_exits_early(tmp_path: Path):

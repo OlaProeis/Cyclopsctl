@@ -2,7 +2,7 @@
 # Install cyclopsctl globally on macOS/Linux.
 set -euo pipefail
 
-SOURCE="pypi"
+SOURCE="git"
 GIT_URL="git+https://github.com/OlaProeis/Cyclopsctl.git"
 LOCAL_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -13,7 +13,7 @@ Usage: ./install.sh [options]
 Install cyclopsctl globally. Default path: Python 3.10+ only.
 
 Options:
-  --source pypi|git|local   Install source (default: pypi)
+  --source git|local        Install source (default: git)
   --git-url URL             Git URL when --source git
   --local-path PATH         Project path when --source local
   -h, --help                Show this help
@@ -60,7 +60,6 @@ if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,
 fi
 
 case "$SOURCE" in
-  pypi) TARGET="cyclopsctl" ;;
   git) TARGET="$GIT_URL" ;;
   local) TARGET="$LOCAL_PATH" ;;
   *)

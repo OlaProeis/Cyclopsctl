@@ -291,3 +291,32 @@ export_transcript_dir = ".cyclopsctl/transcripts"
     cfg = load_run_config(config_path=toml_path, project_root=project_tree)
     assert cfg.git_summary is True
     assert cfg.export_transcript_dir == (project_tree / ".cyclopsctl/transcripts").resolve()
+
+
+def test_cycle_log_resolves_relative_to_project_root(project_tree: Path):
+    cfg = _config(project_tree, cycle_log="logs/cycles.jsonl")
+    assert cfg.cycle_log == (project_tree / "logs/cycles.jsonl").resolve()
+
+
+def test_cycle_log_defaults_to_none(project_tree: Path):
+    cfg = _config(project_tree)
+    assert cfg.cycle_log is None
+
+
+def test_config_loads_cycle_log_from_run_section(project_tree: Path, tmp_path: Path):
+    toml_path = tmp_path / "cyclopsctl.toml"
+    toml_path.write_text(
+        f"""
+project_root = "{project_tree.as_posix()}"
+cycles = 1
+current_handover = "current-handover-prompt.md"
+update_handover = "update-handover-prompt.md"
+
+[run]
+cycle_log = ".cyclopsctl/cycle-log.jsonl"
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_run_config(config_path=toml_path, project_root=project_tree)
+    assert cfg.cycle_log == (project_tree / ".cyclopsctl/cycle-log.jsonl").resolve()

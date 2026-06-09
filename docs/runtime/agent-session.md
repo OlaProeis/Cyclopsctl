@@ -33,4 +33,15 @@ When a bridge is supplied through env vars, the SDK treats it as *caller-supplie
 
 `install_env_fallback_default_client(url, auth_token)` builds a `Client(..., allow_api_key_env_fallback=True)` and installs it as the SDK default — the same trust model the SDK uses for a bridge it launched itself (a single-user local CLI with the user's own `CURSOR_API_KEY`). `launch_bridge_for_windows` calls it after discovery and stores the client on `ManagedBridge.client`; `ManagedBridge.close()` resets it via `close_default_client()`. The installer is injectable for tests.
 
+### Long-run timeout (`WaitLiveRun` / activity stream)
+
+The cursor-sdk client defaults are 60s unary / 600s stream. `run.wait()` issues a blocking `WaitLiveRun` unary RPC, so a long agent run (soak test, full acceptance suite) fails with `Bridge request timed out: ReadTimeout`. The installed client uses `resolve_bridge_client_timeout()` to apply a generous timeout (default **1 hour**) to both unary and stream RPCs. Override with `CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS` (a number of seconds; `0` / `none` disables the timeout entirely).
+
+### Bridge cleanup (no orphaned processes)
+
+The bridge spawns child node/npm/test processes (the agent's shell commands run under it), so cleanup must kill the whole **process tree**:
+
+- `ManagedBridge.close()` is idempotent; on Windows `_terminate_process` uses `taskkill /F /T` to terminate the bridge subprocess **and its descendants** (otherwise a background `npm test` / Playwright soak orphans when the run ends). Non-Windows falls back to `terminate()` / `kill()`.
+- Launched bridges are tracked in a module registry; an `atexit` handler (`_close_active_bridges_atexit`) closes any still open at interpreter exit, as a safety net for exit paths that skip the `managed_sdk_bridge` context manager's `finally`.
+
 Tests: `tests/test_runner.py`, `tests/test_session.py`, `tests/test_sdk_bridge.py`.

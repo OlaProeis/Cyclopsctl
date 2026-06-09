@@ -11,7 +11,9 @@ PACKAGE_ROOT = Path(__file__).resolve().parent
 TEMPLATES_DIR = PACKAGE_ROOT / "templates"
 GENERIC_STUB_DIR = TEMPLATES_DIR
 CURSOR_RULES_TEMPLATE_DIR = TEMPLATES_DIR / "cursor-rules"
+SKILLS_TEMPLATE_DIR = TEMPLATES_DIR / "skills"
 CYCLOPSCTL_CURSOR_RULES_DIR = Path(".cursor/rules/cyclopsctl")
+CYCLOPSCTL_SKILL_DIR = Path(".cursor/skills/cyclopsctl")
 
 WORKFLOW_TEMPLATE_MAP: dict[str, str] = {
     "workflow-ai-context.md": "ai-context.md",
@@ -120,6 +122,7 @@ class WorkflowGenResult:
     generated_paths: tuple[str, ...]
     skipped_paths: tuple[str, ...]
     installed_rule_paths: tuple[str, ...] = ()
+    installed_skill_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -669,6 +672,57 @@ def install_cyclopsctl_cursor_rules(
     return tuple(installed)
 
 
+def cyclopsctl_skill_present(project_root: Path) -> bool:
+    """Return True when the cyclopsctl Cursor skill is installed."""
+    skill_path = project_root.resolve() / CYCLOPSCTL_SKILL_DIR / "SKILL.md"
+    return skill_path.is_file()
+
+
+def _bundled_skill_paths() -> tuple[Path, ...]:
+    source_root = SKILLS_TEMPLATE_DIR / "cyclopsctl"
+    if not source_root.is_dir():
+        raise WorkflowGenError(f"Bundled cyclopsctl skill missing: {source_root}")
+    return tuple(sorted(source_root.rglob("SKILL.md")))
+
+
+def install_cyclopsctl_skill(
+    project_root: Path,
+    *,
+    project_root_value: str | None = None,
+    force: bool = False,
+) -> tuple[str, ...]:
+    """
+    Copy bundled cyclopsctl Cursor skill into the project.
+
+    Non-destructive by default: existing skill files are skipped unless forced.
+    """
+    root = project_root.resolve()
+    bundled_skills = _bundled_skill_paths()
+    if not bundled_skills:
+        return ()
+
+    installed: list[str] = []
+    root_display = project_root_value or str(root)
+    for source in bundled_skills:
+        relative = source.relative_to(SKILLS_TEMPLATE_DIR / "cyclopsctl")
+        target = root / CYCLOPSCTL_SKILL_DIR / relative
+        relative_display = (CYCLOPSCTL_SKILL_DIR / relative).as_posix()
+        if target.is_file() and not force:
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            content = _read_text(source)
+            rendered = _substitute_placeholders(
+                content,
+                {"PROJECT_ROOT": root_display},
+            )
+            target.write_text(rendered, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            raise WorkflowGenError(f"Cannot write Cursor skill: {target}") from exc
+        installed.append(relative_display)
+    return tuple(installed)
+
+
 def _render_workflow_template(template_name: str, inputs: WorkflowInputs) -> str:
     template_path = TEMPLATES_DIR / template_name
     if not template_path.is_file():
@@ -741,11 +795,17 @@ def generate_workflow_files(config: WorkflowGenConfig) -> WorkflowGenResult:
         project_root_value=str(inputs.project_root),
         force=config.force_workflow,
     )
+    installed_skills = install_cyclopsctl_skill(
+        root,
+        project_root_value=str(inputs.project_root),
+        force=config.force_workflow,
+    )
 
     return WorkflowGenResult(
         generated_paths=tuple(generated),
         skipped_paths=tuple(skipped),
         installed_rule_paths=installed_rules,
+        installed_skill_paths=installed_skills,
     )
 
 

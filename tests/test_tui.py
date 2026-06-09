@@ -25,7 +25,9 @@ from cyclopsctl.tui import (
     activity_callback_for_logger,
     activity_panel_content_width,
     build_task_queue_snapshot,
+    HEARTBEAT_IDLE_THRESHOLD_SECONDS,
     format_activity_for_display,
+    format_elapsed_short,
     format_launch_menu_plain,
     format_launch_overview_plain,
     format_queue_strip_line,
@@ -34,6 +36,7 @@ from cyclopsctl.tui import (
     render_activity_visual_lines,
     render_agent_plan_section,
     render_dashboard,
+    render_heartbeat,
     render_launch_menu,
     render_queue_strip_section,
     use_rich_display,
@@ -72,7 +75,8 @@ def test_managed_cycle_display_tty_yields_rich_logger():
                 assert isinstance(logger, RichCycleLogger)
                 mock_live.refresh.assert_not_called()
             live_ctor.assert_called_once()
-            assert live_ctor.call_args.kwargs["auto_refresh"] is False
+            assert live_ctor.call_args.kwargs["auto_refresh"] is True
+            assert live_ctor.call_args.kwargs["refresh_per_second"] >= 1
             assert live_ctor.call_args.kwargs["get_renderable"] is not None
 
 
@@ -225,6 +229,79 @@ def test_render_dashboard_produces_panel():
 
     rendered = render_dashboard(state)
     assert rendered is not None
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0, "0s"),
+        (45, "45s"),
+        (59, "59s"),
+        (60, "1m"),
+        (90, "1m 30s"),
+        (3600, "1h"),
+        (3660, "1h 1m"),
+        (-5, "0s"),
+    ],
+)
+def test_format_elapsed_short(seconds, expected):
+    assert format_elapsed_short(seconds) == expected
+
+
+def test_render_heartbeat_none_outside_active_phase():
+    state = RunDashboardState(phase="verify", last_activity_monotonic=0.0)
+    assert render_heartbeat(state, now=1000.0) is None
+
+
+def test_render_heartbeat_none_when_recently_active():
+    state = RunDashboardState(phase="implementation", last_activity_monotonic=100.0)
+    now = 100.0 + HEARTBEAT_IDLE_THRESHOLD_SECONDS - 1
+    assert render_heartbeat(state, now=now) is None
+
+
+def test_render_heartbeat_shows_idle_and_elapsed():
+    state = RunDashboardState(
+        phase="implementation",
+        last_activity_monotonic=100.0,
+        phase_started_monotonic=40.0,
+    )
+    heartbeat = render_heartbeat(state, now=130.0)
+    assert heartbeat is not None
+    text = heartbeat.plain
+    assert "still running" in text
+    assert "30s" in text
+    assert "1m 30s elapsed" in text
+
+
+def test_render_dashboard_includes_heartbeat_when_idle():
+    from rich.console import Console
+
+    state = RunDashboardState(
+        phase="implementation",
+        last_activity_monotonic=0.0,
+        phase_started_monotonic=0.0,
+    )
+    console = Console(width=120, record=True)
+    console.print(render_dashboard(state, console_width=120, now=120.0))
+    rendered_text = console.export_text()
+    assert "still running" in rendered_text
+
+
+def test_rich_logger_tracks_activity_timestamps():
+    clock = iter([10.0, 11.0, 12.0, 13.0, 14.0, 15.0])
+    logger = RichCycleLogger(_monotonic=lambda: next(clock))
+    logger.log_cycle_start(
+        cycle_number=1,
+        total_cycles=1,
+        next_task_id=1,
+        next_task_title="t",
+        model_id="m",
+        handover_task_id=None,
+    )
+    assert logger.state.phase_started_monotonic == 10.0
+    assert logger.state.last_activity_monotonic == 10.0
+    logger.append_activity("shell · pytest")
+    assert logger.state.last_activity_monotonic == 11.0
 
 
 def test_render_agent_plan_section_hidden_when_empty():

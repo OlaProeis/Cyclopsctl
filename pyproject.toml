@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cyclopsctl"
-version = "0.1.1"
+version = "0.1.2"
 description = "Cursor task orchestrator CLI — orchestrate agent implement/update cycles, PRD bootstrap, model routing, and handover verification"
 readme = "README.md"
 license = "MIT"

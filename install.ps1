@@ -4,13 +4,13 @@
   Install cyclopsctl globally on Windows.
 
 .DESCRIPTION
-  Validates Python 3.10+, installs the cyclopsctl from PyPI, git, or a local
-  path, then verifies the command and prints PATH remediation when needed.
+  Validates Python 3.10+, installs cyclopsctl from git or a local path via pip,
+  then verifies the command and prints PATH remediation when needed.
 
   The default install path requires Python only and CURSOR_API_KEY at runtime.
 
 .PARAMETER Source
-  Install source: pypi (default), git, or local.
+  Install source: git (default) or local.
 
 .PARAMETER GitUrl
   Git URL used when -Source git (default: project repository).
@@ -20,8 +20,8 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("pypi", "git", "local")]
-    [string]$Source = "pypi",
+    [ValidateSet("git", "local")]
+    [string]$Source = "git",
 
     [string]$GitUrl = "git+https://github.com/OlaProeis/Cyclopsctl.git",
 
@@ -50,7 +50,6 @@ function Test-PythonVersion {
 function Get-InstallTarget {
     param([string]$Source)
     switch ($Source) {
-        "pypi" { return "cyclopsctl" }
         "git" { return $GitUrl }
         "local" { return $LocalPath }
         default { throw "Unsupported source: $Source" }

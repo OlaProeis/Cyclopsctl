@@ -103,8 +103,8 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 | `interrupt` | SIGINT controller, `RunInterruptedError`, exit code 130 |
 | `state` | Crash-recovery run state file, `RunStateTracker`, `cyclopsctl status` |
 | `history` | Cross-invocation run history, resume warnings, `--fresh`, `--resume` task skip (does **not** select cycle-1 prompt when handover is ready) |
-| `logging` | Cycle logs (text / optional JSONL) |
-| `tui` | Rich live dashboard, launch overview, post-run summary (`RunDashboardState`, `RichCycleLogger`) |
+| `logging` | Cycle logs (text / optional durable JSONL via `--cycle-log` / `[run] cycle_log`) |
+| `tui` | Rich live dashboard (incl. stall heartbeat), launch overview, post-run summary (`RunDashboardState`, `RichCycleLogger`, `render_heartbeat`) |
 | `cli` | Default `launch`, `run`, `doctor`/`check`, `models`, `status`, `bootstrap`, `init`; `--version` from package metadata |
 | `version` | `get_package_version()` via `importlib.metadata` |
 | `installer` | Global install helpers: PATH checks, remediation, verification (`python -m cyclopsctl.installer`) |
@@ -124,7 +124,7 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 |------------|------------|
 | Product requirements (bootstrap / planning only — not per-cycle) | `prd.md` |
 | Cyclopsctl package | `src/cyclopsctl/` (`pyproject.toml`, `pip install -e .` or global `install.ps1` / `install.sh`) |
-| Global install / PyPI | `install.ps1`, `install.sh`, `src/cyclopsctl/installer.py`, `docs/setup/package-distribution.md`, `.github/workflows/publish.yml` |
+| Global install (git/local pip) | `install.ps1`, `install.sh`, `src/cyclopsctl/installer.py`, `docs/setup/package-distribution.md` |
 | Package version | `src/cyclopsctl/version.py`, `cyclopsctl --version` |
 | Run configuration | `src/cyclopsctl/config.py`, `cyclopsctl.toml.example`, local `cyclopsctl.toml` |
 | Config profiles | `src/cyclopsctl/profiles.py`, `docs/setup/config-profiles.md` |
@@ -186,6 +186,8 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 - `resolve_project_root()` in `config.py` defaults CLI project root to cwd when `--project-root` is omitted.
 - `workflow_gen.py` staleness heuristics flag outdated workflow refs; `cyclopsctl init --refresh-workflow` regenerates stale files — see `docs/workflow/workflow-refresh.md`.
 - Manual validation: `docs/guides/testing-guide.md` (fresh + existing repo); pytest regression in `test_fresh_repo_integration.py` and `test_brownfield_integration.py`.
-- `AgentRunError` carries `phase`; `cli._log_and_exit_agent_run` prints an actionable report (result detail + resolved local transcript path via `failure_report.encode_project_slug`).
+- `AgentRunError` carries `phase`; `cli._log_and_exit_agent_run` prints an actionable report (result detail + resolved local transcript path via `failure_report.encode_project_slug` + agent's last actions via `summarize_transcript_tail`, ASCII-only).
 - On `AgentRunError` the loop persists `RunStateStatus.FAILED` with agent/run ids (`_persist_phase_failure`); `cyclopsctl status` shows the failed phase.
 - Windows bridge: `sdk_bridge.install_env_fallback_default_client` installs a `Client(allow_api_key_env_fallback=True)` so `run.wait()` doesn't fail with `missing_api_key` on caller-supplied bridges.
+- Windows bridge cleanup kills the whole process tree (`taskkill /F /T`) so agent child node/npm/test processes don't orphan; `_ACTIVE_BRIDGES` + `atexit` safety net closes leaked bridges. `ManagedBridge.close()` is idempotent.
+- Bridge client uses a generous RPC timeout (`resolve_bridge_client_timeout`, default 1h, env `CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS`) so long agent runs (soak/acceptance suites) don't fail `run.wait()` with `ReadTimeout` (SDK defaults are 60s unary / 600s stream).

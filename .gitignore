@@ -18,7 +18,8 @@ node_modules/
 /.taskmaster/
 
 # Local Cursor IDE config (MCP, rules, commands)
-# Cyclopsctl rules for target repos ship from src/cyclopsctl/templates/
+# Cyclopsctl rules + skills for target repos ship from src/cyclopsctl/templates/
+# and are installed to .cursor/ on init. Commit .cursor/skills/ (operator skill).
 /.cursor/mcp.json
 /.cursor/commands/
 /.cursor/rules/

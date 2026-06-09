@@ -198,6 +198,7 @@ class CyclopsctlConfig:
     dry_run: bool = False
     git_summary: bool = False
     export_transcript_dir: Path | None = None
+    cycle_log: Path | None = None
     routing: RoutingConfig | None = None
     task_backend: TaskBackendKind = "native"  # type: ignore[assignment]
 
@@ -364,7 +365,7 @@ def _merge_run_section(file_cfg: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(file_cfg)
     run_section = file_cfg.get("run")
     if isinstance(run_section, dict):
-        for key in ("dry_run", "git_summary", "export_transcript_dir"):
+        for key in ("dry_run", "git_summary", "export_transcript_dir", "cycle_log"):
             if key in run_section and run_section[key] is not None:
                 merged[key] = run_section[key]
     return merged
@@ -376,6 +377,21 @@ def _resolve_export_transcript_dir(
 ) -> Path | None:
     """Resolve optional transcript export directory under project_root when relative."""
     if raw is None:
+        return None
+    candidate = Path(str(raw)).expanduser()
+    if not candidate.is_absolute():
+        return (project_root / candidate).resolve()
+    return candidate.resolve()
+
+
+def _resolve_cycle_log(
+    raw: object | None,
+    project_root: Path,
+) -> Path | None:
+    """Resolve the optional durable JSONL cycle-log path under project_root when relative."""
+    if raw is None:
+        return None
+    if str(raw).strip() in {"", "."}:
         return None
     candidate = Path(str(raw)).expanduser()
     if not candidate.is_absolute():
@@ -707,6 +723,10 @@ def build_run_config(
         _pick("export_transcript_dir", cli, file_values),
         project_root,
     )
+    cycle_log = _resolve_cycle_log(
+        _pick("cycle_log", cli, file_values),
+        project_root,
+    )
 
     routing = _parse_routing_section(file_values, project_root)
     routing = _apply_routing_cli_overrides(routing, cli)
@@ -737,6 +757,7 @@ def build_run_config(
         dry_run=dry_run,
         git_summary=git_summary,
         export_transcript_dir=export_transcript_dir,
+        cycle_log=cycle_log,
         routing=routing,
         task_backend=task_backend,
     )
@@ -1030,6 +1051,7 @@ def load_run_config(
     dry_run: bool | None = None,
     git_summary: bool | None = None,
     export_transcript_dir: Path | None = None,
+    cycle_log: Path | str | None = None,
     composer_tier: str | None = None,
     opus_enabled: bool | None = None,
 ) -> CyclopsctlConfig:
@@ -1061,6 +1083,7 @@ def load_run_config(
         "dry_run": dry_run,
         "git_summary": git_summary,
         "export_transcript_dir": export_transcript_dir,
+        "cycle_log": cycle_log,
         "composer_tier": composer_tier,
         "opus_enabled": opus_enabled,
     }

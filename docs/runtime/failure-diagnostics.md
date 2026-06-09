@@ -19,6 +19,7 @@ Agent run failed during implementation (kind=startup, exit 1)
 
 - **detail** — `AgentRunError.result_detail` when present, else an explicit `(SDK returned no detail)`.
 - **transcript** — the resolved local Cursor JSONL path when it exists on disk, else `(local transcript not found)`. The cyclopsctl does **not** call `Agent.get_run` (unreliable after failure); it points at the local transcript instead.
+- **last activity** — when the transcript exists, `summarize_transcript_tail` parses the last assistant tool invocations (and any non-redacted prose) so a `kind=run` failure with an empty SDK `result` still shows what the agent was doing (the SDK export records tool *invocations*, not results, so this is a best-effort action trail). Output is ASCII so the report can never fail to print on legacy Windows consoles.
 
 ## Transcript path resolution
 
@@ -45,7 +46,7 @@ Resolution also scans the projects directory case-insensitively so drive-letter 
 
 | Module | Role |
 |--------|------|
-| `failure_report.py` | `encode_project_slug`, `resolve_transcript_path`, `format_failure_report` |
+| `failure_report.py` | `encode_project_slug`, `resolve_transcript_path`, `summarize_transcript_tail`, `format_failure_report` |
 | `cli.py` | `_log_and_exit_agent_run` — structured log + stderr report on `AgentRunError` |
 | `runner.py` | `AgentRunError.phase` (`startup` / `implementation` / `update`) |
 | `loop.py` | `_persist_phase_failure` — `failed` state with agent/run ids |

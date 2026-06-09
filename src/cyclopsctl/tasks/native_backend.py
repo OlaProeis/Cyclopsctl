@@ -28,6 +28,7 @@ class NativeTaskBackend:
         from cyclopsctl.tasks.store import ensure_native_layout, save_tasks_document
         from cyclopsctl.workflow_gen import (
             install_cyclopsctl_cursor_rules,
+            install_cyclopsctl_skill,
         )
 
         root = project_root.resolve()
@@ -39,6 +40,7 @@ class NativeTaskBackend:
             store.set_current_tag(NATIVE_DEFAULT_TAG)
         if "cursor" in rules:
             install_cyclopsctl_cursor_rules(root, project_root_value=str(root))
+            install_cyclopsctl_skill(root, project_root_value=str(root))
 
     def parse_prd(
         self,

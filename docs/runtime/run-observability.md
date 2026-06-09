@@ -9,8 +9,9 @@ Optional `cyclopsctl run` features for brownfield safety and post-run review wit
 | Dry-run plan | `--dry-run` | `dry_run = true` | off |
 | Git diff summary | `--git-summary` | `git_summary = true` | off |
 | Transcript sidecars | `--export-transcript-dir PATH` | `export_transcript_dir = "..."` | none |
+| Durable cycle log | `--cycle-log PATH` | `cycle_log = "..."` | none |
 
-CLI flags override TOML. Relative paths for `export_transcript_dir` resolve under `project_root`.
+CLI flags override TOML. Relative paths for `export_transcript_dir` and `cycle_log` resolve under `project_root`.
 
 Example:
 
@@ -18,6 +19,7 @@ Example:
 [run]
 git_summary = true
 export_transcript_dir = ".cyclopsctl/transcripts"
+cycle_log = ".cyclopsctl/cycle-log.jsonl"
 ```
 
 ## Dry-run
@@ -72,6 +74,15 @@ Payload:
 
 `run_id` is the implementation-phase run id. Dry-run cycles do not write sidecars.
 
+## Durable cycle log
+
+When `--cycle-log PATH` (or `[run] cycle_log`) is set, the resolved JSONL path is
+passed to `managed_cycle_display`, so the active `CycleLogger`/`RichCycleLogger`
+appends one structured JSON object per line for every cycle start, completion,
+warning, error, interrupt, and the final fatal `AgentRunError`. Unlike the live
+dashboard, this trace survives the run, so a crash or hang can be diagnosed
+afterwards. See `docs/runtime/structured-logging.md` for the event shapes.
+
 ## Post-run summary extensions
 
 When outcomes include agent ids or git summaries, `print_run_summary` adds columns dynamically:
@@ -90,7 +101,7 @@ Dry-run outcomes omit agent/run columns (empty ids). Verification shows `dry-run
 |--------|------|
 | `loop.py` | Dry-run branch after `log_cycle_start`; git capture; sidecar hook; `RunLoopResult.dry_run` |
 | `cli.py` | Flags, `[run]` config wiring, skip SDK bridge on dry-run |
-| `config.py` | `CyclopsctlConfig.dry_run`, `git_summary`, `export_transcript_dir`; `_merge_run_section()` |
+| `config.py` | `CyclopsctlConfig.dry_run`, `git_summary`, `export_transcript_dir`, `cycle_log`; `_merge_run_section()`, `_resolve_cycle_log()` |
 | `git_summary.py` | Injectable git subprocess helpers |
 | `transcript_export.py` | Atomic JSON sidecar writer |
 | `logging.py` | `log_dry_run_plan()`, `CycleLogRecord.git_diff_summary` |

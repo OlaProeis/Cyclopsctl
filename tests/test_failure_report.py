@@ -7,10 +7,13 @@ from pathlib import Path
 import pytest
 
 from cyclopsctl.cli import _log_and_exit_agent_run
+import json
+
 from cyclopsctl.failure_report import (
     encode_project_slug,
     format_failure_report,
     resolve_transcript_path,
+    summarize_transcript_tail,
 )
 from cyclopsctl.runner import (
     RUN_FAILURE_EXIT_CODE,
@@ -127,6 +130,91 @@ def test_format_failure_report_with_transcript(tmp_path: Path):
     assert "run-a9ee18a0" in report
     assert str(transcript) in report
     assert "(SDK returned no detail)" in report
+
+
+def _write_transcript(home: Path, slug: str, agent_id: str, records: list[dict]) -> Path:
+    transcript = (
+        home
+        / ".cursor"
+        / "projects"
+        / slug
+        / "agent-transcripts"
+        / agent_id
+        / f"{agent_id}.jsonl"
+    )
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text(
+        "\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8"
+    )
+    return transcript
+
+
+def _assistant(*blocks: dict) -> dict:
+    return {"role": "assistant", "message": {"content": list(blocks)}}
+
+
+def test_summarize_transcript_tail_extracts_actions(tmp_path: Path):
+    transcript = tmp_path / "t.jsonl"
+    records = [
+        {"role": "user", "message": {"content": [{"type": "text", "text": "huge prompt"}]}},
+        _assistant(
+            {"type": "text", "text": "[REDACTED]"},
+            {"type": "tool_use", "name": "Shell", "input": {"command": "npm run test:unit 2>&1"}},
+        ),
+        _assistant(
+            {"type": "tool_use", "name": "StrReplace", "input": {"path": "G:\\x\\StressSystem.test.ts"}},
+        ),
+        _assistant({"type": "text", "text": "Re-running unit tests to confirm."}),
+    ]
+    transcript.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    tail = summarize_transcript_tail(transcript)
+
+    assert "Shell: npm run test:unit 2>&1" in tail
+    assert any("StressSystem.test.ts" in entry for entry in tail)
+    assert any("Re-running unit tests" in entry for entry in tail)
+    assert all("huge prompt" not in entry for entry in tail)  # user prompt excluded
+    assert all(entry != "[REDACTED]" for entry in tail)
+
+
+def test_summarize_transcript_tail_limits_entries(tmp_path: Path):
+    transcript = tmp_path / "t.jsonl"
+    records = [
+        _assistant({"type": "tool_use", "name": "Shell", "input": {"command": f"cmd {i}"}})
+        for i in range(20)
+    ]
+    transcript.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    tail = summarize_transcript_tail(transcript, max_entries=5)
+
+    assert len(tail) == 5
+    assert tail[-1] == "Shell: cmd 19"
+
+
+def test_summarize_transcript_tail_missing_file(tmp_path: Path):
+    assert summarize_transcript_tail(tmp_path / "nope.jsonl") == []
+
+
+def test_format_failure_report_includes_transcript_tail(tmp_path: Path):
+    project_root = tmp_path / "repo"
+    project_root.mkdir()
+    slug = encode_project_slug(project_root)
+    home = tmp_path / "home"
+    _write_transcript(
+        home,
+        slug,
+        "agent-db077b6c",
+        [
+            _assistant(
+                {"type": "tool_use", "name": "Shell", "input": {"command": "npm test 2>&1"}},
+            ),
+        ],
+    )
+
+    report = format_failure_report(_run_error(), project_root=project_root, home=home)
+
+    assert "last activity (from transcript):" in report
+    assert "Shell: npm test 2>&1" in report
 
 
 def test_format_failure_report_with_detail_and_no_transcript(tmp_path: Path):

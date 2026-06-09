@@ -1271,12 +1271,19 @@ def run_project_setup(
         planned = list(_plan_scaffold_repairs(config))
         if not attach_mode and not project_tasks_initialized(config.project_root):
             planned.append("native tasks init")
-            from cyclopsctl.workflow_gen import cyclopsctl_cursor_rules_present
+            from cyclopsctl.workflow_gen import (
+                cyclopsctl_cursor_rules_present,
+                cyclopsctl_skill_present,
+            )
 
             if "cursor" in config.rules and not cyclopsctl_cursor_rules_present(
                 config.project_root
             ):
                 planned.append("cyclopsctl rules")
+            if "cursor" in config.rules and not cyclopsctl_skill_present(
+                config.project_root
+            ):
+                planned.append("cyclopsctl skill")
         if not attach_mode and not has_tasks:
             planned.extend(("parse-prd", "analyze-complexity"))
         elif not config.complexity_report.is_file():
@@ -1316,6 +1323,7 @@ def run_project_setup(
         repairs.append("native tasks init")
         if "cursor" in config.rules:
             repairs.append("cyclopsctl rules")
+            repairs.append("cyclopsctl skill")
 
     workflow_result = generate_workflow_files(
         WorkflowGenConfig(
@@ -1331,6 +1339,8 @@ def run_project_setup(
     repairs.extend(workflow_result.generated_paths)
     if workflow_result.installed_rule_paths and "cyclopsctl rules" not in repairs:
         repairs.append("cyclopsctl rules")
+    if workflow_result.installed_skill_paths and "cyclopsctl skill" not in repairs:
+        repairs.append("cyclopsctl skill")
 
     if config.refresh_workflow:
         refresh_result = refresh_stale_workflow_files(

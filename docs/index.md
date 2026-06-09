@@ -14,7 +14,7 @@
 
 ## Setup & Configuration
 - `setup/package-scaffold.md` - Python package layout, editable install, and `cyclopsctl` entrypoint.
-- `setup/package-distribution.md` - Global install scripts (`install.ps1` / `install.sh`), version metadata, wheel packaging, and PyPI publish workflow.
+- `setup/package-distribution.md` - Global install scripts (`install.ps1` / `install.sh`), git/local `pip install`, version metadata, and wheel packaging.
 - `setup/cli-configuration.md` - `cyclopsctl run` flags, TOML config (`cyclopsctl.toml.example` template), path validation, and `CyclopsctlConfig`.
 - `setup/config-profiles.md` - Named `[profile.*]` / `[routing_profile.*]` TOML presets, merge precedence, `--profile` on run/init, and built-in init seeding profiles.
 - `setup/project-scaffold.md` - `cyclopsctl init` as the single first-time setup command: delegates to `project_setup`, fail-fast prerequisites, power-user flags, and ready messaging for `launch`.

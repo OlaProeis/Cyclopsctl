@@ -9,6 +9,7 @@ discovery path and point the SDK at it via env vars.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import subprocess
@@ -16,25 +17,61 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Managed bridges that have not yet been closed. Used by the atexit safety net
+# so the bridge subprocess is terminated even if a code path exits without
+# unwinding the ``managed_sdk_bridge`` context manager's ``finally``.
+_ACTIVE_BRIDGES: list[ManagedBridge] = []
 
 _BRIDGE_URL_ENV = "CURSOR_SDK_BRIDGE_URL"
 _BRIDGE_TOKEN_ENV = "CURSOR_SDK_BRIDGE_TOKEN"
 _BRIDGE_AUTH_TOKEN_ENV = "CURSOR_SDK_BRIDGE_AUTH_TOKEN"
 _DEFAULT_DISCOVERY_TIMEOUT = 30.0
 
+# Read timeout for bridge RPCs (`WaitLiveRun`, activity stream). The cursor-sdk
+# defaults (60s unary / 600s stream) are far too short for long agent runs such
+# as soak tests or full acceptance suites, which makes `run.wait()` fail with
+# `Bridge request timed out: ReadTimeout`. Default to one hour; override with
+# `CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS` (set `0` / `none` to disable entirely).
+_BRIDGE_TIMEOUT_ENV = "CYCLOPSCTL_BRIDGE_TIMEOUT_SECONDS"
+DEFAULT_BRIDGE_TIMEOUT_SECONDS = 3600.0
+
 InstallClientFn = Callable[..., Any]
+
+
+def resolve_bridge_client_timeout(
+    *, env: dict[str, str] | None = None
+) -> float | None:
+    """Resolve the bridge RPC timeout from env; ``None`` disables timeouts."""
+    source = env if env is not None else os.environ
+    raw = source.get(_BRIDGE_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_BRIDGE_TIMEOUT_SECONDS
+    if raw.lower() in {"0", "none", "off", "disabled", "disable"}:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid %s=%r; using default %.0fs",
+            _BRIDGE_TIMEOUT_ENV,
+            raw,
+            DEFAULT_BRIDGE_TIMEOUT_SECONDS,
+        )
+        return DEFAULT_BRIDGE_TIMEOUT_SECONDS
+    return value if value > 0 else None
 
 
 class SdkBridgeError(RuntimeError):
     """Failed to start or connect to the local ``cursor-sdk-bridge`` process."""
 
 
-@dataclass
+@dataclass(eq=False)
 class ManagedBridge:
     """A bridge subprocess started by the cyclopsctl (Windows bootstrap)."""
 
@@ -42,9 +79,14 @@ class ManagedBridge:
     url: str
     auth_token: str
     client: Any = None
+    _closed: bool = field(default=False, repr=False)
 
     def close(self) -> None:
-        """Shut down the bridge and clear SDK env overrides."""
+        """Shut down the bridge and clear SDK env overrides (idempotent)."""
+        if self._closed:
+            return
+        self._closed = True
+        _unregister_active_bridge(self)
         try:
             from cursor_sdk._connect import post_bridge_shutdown
 
@@ -61,6 +103,33 @@ class ManagedBridge:
             close_default_client()
         except Exception:
             logger.debug("Failed to reset cursor-sdk default client", exc_info=True)
+
+
+def _register_active_bridge(bridge: ManagedBridge) -> None:
+    _ACTIVE_BRIDGES.append(bridge)
+
+
+def _unregister_active_bridge(bridge: ManagedBridge) -> None:
+    try:
+        _ACTIVE_BRIDGES.remove(bridge)
+    except ValueError:
+        pass
+
+
+@atexit.register
+def _close_active_bridges_atexit() -> None:
+    """Safety net: close any bridge still open at interpreter exit.
+
+    Normal runs close the bridge through the ``managed_sdk_bridge`` context
+    manager. This handler only matters when an exit path skips that ``finally``
+    (e.g. an unexpected ``sys.exit`` during Rich teardown), so the bridge
+    subprocess and its child node/npm/test processes do not orphan.
+    """
+    for bridge in list(_ACTIVE_BRIDGES):
+        try:
+            bridge.close()
+        except Exception:
+            logger.debug("atexit bridge cleanup failed", exc_info=True)
 
 
 def install_env_fallback_default_client(*, url: str, auth_token: str) -> Any:
@@ -81,14 +150,20 @@ def install_env_fallback_default_client(*, url: str, auth_token: str) -> Any:
     from cursor_sdk import Client
     from cursor_sdk import _client as sdk_client
 
+    timeout = resolve_bridge_client_timeout()
     client = Client(
         base_url=url,
         auth_token=auth_token,
         allow_api_key_env_fallback=True,
+        timeout=timeout,
     )
     with sdk_client._DEFAULT_CLIENT_LOCK:
         sdk_client._DEFAULT_CLIENT = client
-    logger.info("Installed env-fallback cursor-sdk default client for %s", url)
+    logger.info(
+        "Installed env-fallback cursor-sdk default client for %s (timeout=%s)",
+        url,
+        "disabled" if timeout is None else f"{timeout:.0f}s",
+    )
     return client
 
 
@@ -173,12 +248,14 @@ def launch_bridge_for_windows(
             _configure_bridge_env(url=endpoint.url, auth_token=endpoint.auth_token)
             logger.info("Started cursor-sdk-bridge at %s for %s", endpoint.url, workspace)
             client = install(url=endpoint.url, auth_token=endpoint.auth_token)
-            return ManagedBridge(
+            bridge = ManagedBridge(
                 process=process,
                 url=endpoint.url,
                 auth_token=endpoint.auth_token,
                 client=client,
             )
+            _register_active_bridge(bridge)
+            return bridge
 
         raise SdkBridgeError("Timed out waiting for cursor-sdk-bridge discovery")
     except Exception:
@@ -233,9 +310,33 @@ def managed_sdk_bridge(
 def _terminate_process(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
+    # The bridge spawns child node/npm/test processes; terminating only the
+    # bridge PID orphans that tree. On Windows use ``taskkill /T`` to kill the
+    # whole tree; elsewhere fall back to terminate/kill of the bridge process.
+    if sys.platform == "win32" and _taskkill_tree(process.pid):
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.debug("Bridge process still alive after taskkill tree", exc_info=True)
+        return
     process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
+
+
+def _taskkill_tree(pid: int) -> bool:
+    """Kill a Windows process tree via ``taskkill /F /T``. Returns success."""
+    try:
+        result = subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        logger.debug("taskkill tree termination failed for pid %s", pid, exc_info=True)
+        return False

@@ -10,8 +10,10 @@
 | `RichCycleLogger` | Subclass of `CycleLogger`; updates state on log hooks; suppresses plain text when TUI is active |
 | `activity_callback_for_logger` | Returns `RichCycleLogger.append_activity` in Rich mode, else `None` |
 | `plan_callback_for_logger` | Returns `RichCycleLogger.apply_plan_update` in Rich mode, else `None` |
-| `render_dashboard(state, console_width=None)` | Builds a Rich `Panel` with progress bar, metadata table, and step checklist |
-| `managed_cycle_display(plain=False)` | Context manager yielding a `CycleLogger` and managing `rich.live.Live` |
+| `render_dashboard(state, console_width=None, now=None)` | Builds a Rich `Panel` with progress bar, metadata table, step checklist, and a "still running" heartbeat |
+| `render_heartbeat(state, now=None)` | Returns a "still running" line when an active run phase has gone quiet, else `None` |
+| `format_elapsed_short(seconds)` | Compact duration formatter (`45s`, `3m 20s`, `1h 5m`) |
+| `managed_cycle_display(plain=False, jsonl_path=None)` | Context manager yielding a `CycleLogger` and managing `rich.live.Live` |
 | `use_rich_display(plain=False)` | Returns whether Rich mode should activate (not plain and stderr is a TTY) |
 
 ## Step checklist
@@ -49,6 +51,27 @@ During implementation and update phases, `send_and_wait` (via `CycleSession.on_a
 `render_dashboard` shows a **Recent activity** section when the buffer is non-empty. Activity clears at each `log_cycle_start`. The live display passes `console.size.width` so prose wraps to the terminal rather than a fixed narrow column.
 
 Parsing and stream consumption live in `runner.py` (`format_activity_from_event`, `is_prose_activity_line`, `merge_prose_activity`, `consume_run_activity`). Coalescing and width-aware rendering live in `tui.py` (`RunDashboardState.append_activity`, `format_activity_for_display`, `activity_panel_content_width`). `loop.py` passes the Rich logger callback into the default `CycleSession` factory.
+
+## Stall heartbeat
+
+A long but legitimate agent step (e.g. a slow test suite) can produce no stream
+events for minutes, making the dashboard look hung. To reassure the user that
+`cyclopsctl` is still alive, `render_heartbeat` adds a yellow **still running**
+line whenever the run is in an active SDK phase (`implementation` or `update`)
+and no new activity has arrived for at least `HEARTBEAT_IDLE_THRESHOLD_SECONDS`
+(15s):
+
+```
+⏳ still running - no new activity for 45s (3m 20s elapsed)
+```
+
+| Aspect | Detail |
+|--------|--------|
+| Active phases | `ACTIVE_RUN_PHASES = {implementation, update}` |
+| Idle/elapsed tracking | `RunDashboardState.last_activity_monotonic` / `phase_started_monotonic`, set by `RichCycleLogger` on phase start and each activity/plan event |
+| Display threshold | `HEARTBEAT_IDLE_THRESHOLD_SECONDS = 15` |
+| Live updates without events | `managed_cycle_display` runs `Live` with `auto_refresh=True` at `HEARTBEAT_REFRESH_PER_SECOND` so the elapsed counter ticks even while the stream is silent |
+| Reset | Cleared via `end_active_phase()` when a run phase completes |
 
 ## Task queue strip
 

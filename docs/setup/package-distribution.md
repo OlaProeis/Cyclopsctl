@@ -1,11 +1,11 @@
 # Package distribution and global install
 
-The cyclopsctl ships as **`cyclopsctl`** on PyPI (or from git/local via `pip`). Users can install globally without cloning the dev repository.
+Install cyclopsctl globally via **`pip install`** from git (no clone required) or from a local checkout. There is no PyPI publish workflow — git is the distribution channel.
 
 ## Version reporting
 
 - `cyclopsctl --version` prints the installed distribution version via `importlib.metadata` (`src/cyclopsctl/version.py`).
-- `cyclopsctl.version.get_package_version()` falls back to `0.1.1` when the package is not installed (editable dev without metadata).
+- `cyclopsctl.version.get_package_version()` falls back to `0.1.2` when the package is not installed (editable dev without metadata).
 
 ## Shell installers
 
@@ -17,7 +17,7 @@ The cyclopsctl ships as **`cyclopsctl`** on PyPI (or from git/local via `pip`). 
 Both scripts:
 
 1. Require Python 3.10+.
-2. Install from **pypi** (default), **git**, or **local** path.
+2. Install from **git** (default) or **local** path via `pip`.
 3. Delegate verification to `python -m cyclopsctl.installer --verify-only`.
 
 ### Examples
@@ -25,11 +25,11 @@ Both scripts:
 ```powershell
 .\install.ps1
 .\install.ps1 -Source local
-.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.1"
+.\install.ps1 -Source git -GitUrl "git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.2"
 ```
 
 ```bash
-./install.sh --source pypi
+./install.sh
 ./install.sh --source local
 ```
 
@@ -60,16 +60,6 @@ python -m pip wheel . -w dist/ --no-deps
 ```
 
 Wheel `METADATA` must include `Version` and `License` (or `License-Expression`).
-
-## PyPI publish workflow
-
-`.github/workflows/publish.yml` runs on `v*` tags:
-
-1. Build wheel and sdist with `python -m build`
-2. Verify wheel metadata
-3. Upload to PyPI via `PYPI_API_TOKEN` secret
-
-Manual publish (without CI): build with `python -m build`, then `twine upload dist/*`.
 
 ## Troubleshooting installs (Windows)
 

@@ -25,7 +25,7 @@ from cyclopsctl.launcher import run_launch
 from cyclopsctl.env import EnvLoadError, load_project_env
 from cyclopsctl.errors import INTERRUPT_EXIT_CODE, KNOWN_RUN_ERRORS, exit_code_for
 from cyclopsctl.interrupt import RunInterruptController, RunInterruptedError
-from cyclopsctl.logging import log_error
+from cyclopsctl.logging import CycleLogger, log_error
 from cyclopsctl.loop import RunLoopResult, run_cycles
 from cyclopsctl.models import (
     ModelListingError,
@@ -237,6 +237,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         metavar="PATH",
         help="Write JSON transcript sidecar files per completed cycle",
+    )
+    run_parser.add_argument(
+        "--cycle-log",
+        type=Path,
+        metavar="PATH",
+        help="Append durable JSONL records (cycle starts, completions, warnings, errors) to PATH",
     )
 
     path_flags = argparse.ArgumentParser(add_help=False)
@@ -610,13 +616,19 @@ def _log_and_exit(exc: BaseException, *, message: str, **context: object) -> int
     return code
 
 
-def _log_and_exit_agent_run(exc: AgentRunError, *, project_root: Path) -> int:
+def _log_and_exit_agent_run(
+    exc: AgentRunError,
+    *,
+    project_root: Path,
+    cycle_logger: CycleLogger | None = None,
+) -> int:
     """Exit on ``AgentRunError`` with an actionable diagnostics report."""
     from cyclopsctl.failure_report import format_failure_report
 
     code = exit_code_for(exc)
     log_error(
         "Agent run failed",
+        cycle_logger=cycle_logger,
         error=str(exc),
         error_type=type(exc).__name__,
         exit_code=code,
@@ -674,6 +686,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
             dry_run=True if getattr(args, "dry_run", False) else None,
             git_summary=True if getattr(args, "git_summary", False) else None,
             export_transcript_dir=getattr(args, "export_transcript_dir", None),
+            cycle_log=getattr(args, "cycle_log", None),
             composer_tier=getattr(args, "composer_tier", None),
             opus_enabled=opus_enabled,
         )
@@ -703,7 +716,11 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     )
     try:
         with run_context:
-            with managed_cycle_display(plain=config.plain, interrupt=interrupt) as cycle_logger:
+            with managed_cycle_display(
+                plain=config.plain,
+                jsonl_path=config.cycle_log,
+                interrupt=interrupt,
+            ) as cycle_logger:
                 from cyclopsctl.tasks.backend import resolve_run_task_hooks
 
                 get_next_fn, list_pending_fn, get_task_by_id_fn = resolve_run_task_hooks(
@@ -747,7 +764,11 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     except SdkBridgeError as exc:
         return _log_and_exit(exc, message="Cursor SDK bridge startup failed")
     except AgentRunError as exc:
-        return _log_and_exit_agent_run(exc, project_root=config.project_root)
+        return _log_and_exit_agent_run(
+            exc,
+            project_root=config.project_root,
+            cycle_logger=cycle_logger,
+        )
     except KNOWN_RUN_ERRORS as exc:
         return _log_and_exit(exc, message="Cyclopsctl run failed")
     finally:

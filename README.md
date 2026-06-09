@@ -252,6 +252,7 @@ Optional `[routing]` in TOML sets score bands, `composer_tier`, `opus_enabled`, 
 | `current-handover-prompt.md` | Next implementation task; must include `# Task ID: <n>`; rewritten by the update agent each cycle |
 | `update-handover-prompt.md` | Fixed template; passed through unchanged by the orchestrator |
 | `ai-context.md` | Prepended to implementation prompts; carries phase rules and project context for agents |
+| `.cursor/skills/cyclopsctl/SKILL.md` | Cursor agent skill for ad-hoc task/CLI help outside runs; installed on `init`, commit in your repo |
 
 See `ai-context.md` in this repo for the canonical rule set.
 
@@ -273,6 +274,7 @@ Cyclopsctl/
 │   ├── testing/               # Regression and readiness docs
 │   └── prd.md                 # Product requirements (this repo)
 ├── prompts/                   # Bootstrap templates
+├── .cursor/skills/cyclopsctl/ # Operator skill (committed here; copied to target repos on init)
 ├── cyclopsctl.toml.example
 ├── ai-context.md              # Agent phase rules
 └── current-handover-prompt.md # Next implementation task (update agent rewrites)

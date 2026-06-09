@@ -72,9 +72,9 @@ def test_format_path_remediation_unix():
     assert "/home/dev/.local/bin" in text
 
 
-def test_build_pip_install_argv_pypi():
-    argv = build_pip_install_argv(source="pypi")
-    assert argv[-1] == PACKAGE_NAME
+def test_build_pip_install_argv_git_default_url():
+    argv = build_pip_install_argv(source="git")
+    assert argv[-1] == DEFAULT_GIT_URL
     assert "pip" in argv[2]
 
 
@@ -142,7 +142,7 @@ def test_run_install_success_with_remediation(monkeypatch):
     )
 
     result = run_install(
-        source="pypi",
+        source="git",
         run=fake_run,
         path_entries=[r"C:\Windows"],
         is_windows=True,
@@ -165,14 +165,14 @@ def test_run_install_pip_failure(monkeypatch):
         lambda **kwargs: ["python", "-m", "pip", "install", PACKAGE_NAME],
     )
 
-    result = run_install(source="pypi", run=fake_run, path_entries=[])
+    result = run_install(source="git", run=fake_run, path_entries=[])
     assert result.exit_code == 1
     assert any("pip install failed" in message for message in result.messages)
 
 
 def test_run_install_rejects_old_python(monkeypatch):
     monkeypatch.setattr("cyclopsctl.installer.sys.version_info", (3, 9, 0))
-    result = run_install(source="pypi", run=lambda *a, **k: None, path_entries=[])
+    result = run_install(source="git", run=lambda *a, **k: None, path_entries=[])
     assert result.exit_code == 1
     assert "3.10" in result.messages[0]
 

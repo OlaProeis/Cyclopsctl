@@ -30,9 +30,17 @@ Bundled rules live in `src/cyclopsctl/templates/cursor-rules/cyclopsctl/`. `inst
 
 `cyclopsctl_cursor_rules_present()` checks whether rules are already installed.
 
-## Init rules install
+## Cyclopsctl Cursor skill
 
-`NativeTaskBackend.init_project()` calls `install_cyclopsctl_cursor_rules()`. `project_setup.py` records `"cyclopsctl rules"` in repairs when rules are added.
+Bundled skill lives in `src/cyclopsctl/templates/skills/cyclopsctl/SKILL.md` (packaged in the wheel). `install_cyclopsctl_skill()` copies it to `.cursor/skills/cyclopsctl/SKILL.md` (non-destructive by default; `--force-workflow` overwrites).
+
+Cursor discovers **project skills only** under `.cursor/skills/<name>/SKILL.md` — not at the repo root. Commit `.cursor/skills/cyclopsctl/` in cyclopsctl-managed projects so IDE agents know `cyclopsctl tasks` and related CLI outside orchestrated runs.
+
+`cyclopsctl_skill_present()` checks whether the skill is already installed.
+
+## Init rules and skill install
+
+`NativeTaskBackend.init_project()` calls `install_cyclopsctl_cursor_rules()` and `install_cyclopsctl_skill()`. `project_setup.py` records `"cyclopsctl rules"` and `"cyclopsctl skill"` in repairs when those files are added.
 
 ## Brownfield compatibility
 

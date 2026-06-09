@@ -28,7 +28,10 @@ from cyclopsctl.project_setup import (
 from cyclopsctl.prompt import render_synced_handover
 from cyclopsctl.tasks.types import TaskShowDetail
 from cyclopsctl.tasks.store import save_tag_tasks, set_current_tag
-from cyclopsctl.workflow_gen import install_cyclopsctl_cursor_rules
+from cyclopsctl.workflow_gen import (
+    install_cyclopsctl_cursor_rules,
+    install_cyclopsctl_skill,
+)
 
 
 def _sample_task(task_id: int = 1) -> dict:
@@ -162,6 +165,7 @@ def _write_healthy_project(root: Path) -> None:
     (root / "docs" / "index.md").write_text("# Docs Index\n", encoding="utf-8")
     write_last_parsed_prd(root, root / "prd.md", tag="master")
     install_cyclopsctl_cursor_rules(root, project_root_value=str(root.resolve()))
+    install_cyclopsctl_skill(root, project_root_value=str(root.resolve()))
 
 
 def test_resolve_project_setup_config_requires_directory(tmp_path: Path):
@@ -235,6 +239,7 @@ def test_fresh_repo_runs_full_setup_pipeline(
     assert ".gitignore" in result.repairs
     assert "native tasks init" in result.repairs
     assert "cyclopsctl rules" in result.repairs
+    assert "cyclopsctl skill" in result.repairs
     assert "parse-prd" in result.repairs
     assert "analyze-complexity" in result.repairs
     assert "handover sync" in result.repairs

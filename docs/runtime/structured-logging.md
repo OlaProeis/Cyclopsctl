@@ -16,7 +16,11 @@ Event helpers (called from `loop.run_cycles`):
 | `log_verification_result` | After successful verification |
 | `log_cycle` | Consolidated `CycleLogRecord` at cycle end |
 
-Module-level `log_warning` and `log_error` accept keyword context for actionable messages. `cli.py` calls `log_error` on configuration, agent, and orchestration failures.
+Module-level `log_warning` and `log_error` accept keyword context for actionable messages. `cli.py` calls `log_error` on configuration, agent, and orchestration failures. When a run's durable cycle log is active, a fatal `AgentRunError` is also appended to it (the handler forwards the run's `cycle_logger`).
+
+## Durable cycle log (`--cycle-log`)
+
+`cyclopsctl run --cycle-log PATH` (or `[run] cycle_log` in `cyclopsctl.toml`) wires the resolved JSONL path into `managed_cycle_display`, so every run leaves a durable trace on disk regardless of TTY/Rich mode. Relative paths resolve under the project root; `""`/`.` disable it. Each cycle start, completion, warning, error, interrupt, and the final `AgentRunError` is appended as one JSON object per line — handy for diagnosing a crash after the live dashboard is gone.
 
 ## CycleLogRecord
 
