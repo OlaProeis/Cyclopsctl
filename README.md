@@ -1,6 +1,13 @@
 # Cyclopsctl: Cursor Task Orchestrator
 
 [![GitHub](https://img.shields.io/badge/GitHub-OlaProeis%2FCyclopsctl-blue?logo=github)](https://github.com/OlaProeis/Cyclopsctl)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Built with Cursor](https://img.shields.io/badge/Built%20with-Cursor-000000?logo=cursor&logoColor=white)](https://cursor.com)
+[![Cursor SDK](https://img.shields.io/badge/Powered%20by-cursor--sdk-5b5bd6)](https://pypi.org/project/cursor-sdk/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#prerequisites)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/OlaProeis/Cyclopsctl/pulls)
+[![AI-generated](https://img.shields.io/badge/Code-100%25%20AI--generated-purple)](#)
 
 **Run Cursor agents in structured cycles from your terminal. Implement, verify, repeat.**
 
