@@ -20,6 +20,8 @@ Define profiles and optional routing presets in `cyclopsctl.toml`:
 ```toml
 [routing_profile.fast-default]
 composer_tier = "fast"
+grok_tier = "fast"
+fable_enabled = true
 opus_enabled = false
 
 [profile.daytime-fast]
@@ -34,7 +36,7 @@ task_source = "handover"
 
 - `[profile.<name>]` — run settings: `cycles`, `task_source`, `retry_on`, `retry_max_attempts`, `default_model`, etc.
 - `routing_profile` — references a `[routing_profile.<name>]` preset.
-- Profile-level `composer_tier`, `opus_enabled`, or `[profile.<name>.routing]` merge into the effective `[routing]` section.
+- Profile-level `composer_tier`, `grok_tier`, `fable_enabled`, `opus_enabled`, or `[profile.<name>.routing]` merge into the effective `[routing]` section.
 
 Profile and routing-profile tables are stripped from the effective config when no `--profile` is selected, so defining profiles does not change default runs.
 

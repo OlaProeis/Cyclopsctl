@@ -83,9 +83,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Composer tier override for this run (standard or fast)",
     )
     run_parser.add_argument(
+        "--grok-tier",
+        choices=["standard", "fast"],
+        metavar="TIER",
+        help="Grok tier override for mid-complexity scores (standard or fast)",
+    )
+    run_parser.add_argument(
+        "--no-fable",
+        action="store_true",
+        help="Disable Fable routing for high-complexity scores (9-10)",
+    )
+    run_parser.add_argument(
         "--no-opus",
         action="store_true",
-        help="Disable Opus routing for high-complexity scores",
+        help="Disable Opus routing when custom rules select Opus",
     )
     run_parser.add_argument(
         "--cycles",
@@ -319,9 +330,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Composer tier for run flow (standard or fast)",
     )
     launch_parser.add_argument(
+        "--grok-tier",
+        choices=["standard", "fast"],
+        metavar="TIER",
+        help="Grok tier for mid-complexity scores (standard or fast)",
+    )
+    launch_parser.add_argument(
+        "--no-fable",
+        action="store_true",
+        help="Disable Fable routing for high-complexity scores in run flow",
+    )
+    launch_parser.add_argument(
         "--no-opus",
         action="store_true",
-        help="Disable Opus routing for high-complexity scores in run flow",
+        help="Disable Opus routing when custom rules select Opus",
     )
     launch_parser.add_argument(
         "--resume",
@@ -382,7 +404,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MODEL",
         help=(
             "Bootstrap AI preset when launch parses a changed PRD: "
-            "auto, composer, sonnet, fable-high-thinking, opus-high-thinking, "
+            "auto, composer, sonnet, grok, fable-high-thinking, opus-high-thinking, "
             "sonnet-max, opus-max, or explicit Cursor model id"
         ),
     )
@@ -590,7 +612,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MODEL",
         help=(
             "Bootstrap AI preset for PRD parse and complexity analysis: "
-            "auto, composer, sonnet, fable-high-thinking, opus-high-thinking, "
+            "auto, composer, sonnet, grok, fable-high-thinking, opus-high-thinking, "
             "sonnet-max, opus-max, or explicit Cursor model id"
         ),
     )
@@ -681,6 +703,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     state_file = "" if getattr(args, "no_state", False) else args.state_file
     history_file = "" if getattr(args, "no_history", False) else args.history_file
     opus_enabled = False if getattr(args, "no_opus", False) else None
+    fable_enabled = False if getattr(args, "no_fable", False) else None
     try:
         config = load_run_config(
             config_path=args.config,
@@ -712,7 +735,9 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
             export_transcript_dir=getattr(args, "export_transcript_dir", None),
             cycle_log=getattr(args, "cycle_log", None),
             composer_tier=getattr(args, "composer_tier", None),
+            grok_tier=getattr(args, "grok_tier", None),
             opus_enabled=opus_enabled,
+            fable_enabled=fable_enabled,
         )
     except ConfigError as exc:
         return _log_and_exit(exc, message="Configuration failed")
@@ -981,6 +1006,7 @@ def _launch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return _log_and_exit(exc, message="Environment loading failed")
 
     opus_enabled = False if args.no_opus else None
+    fable_enabled = False if getattr(args, "no_fable", False) else None
     try:
         with managed_sdk_bridge(config.project_root):
             dispatch = run_launch(
@@ -994,7 +1020,9 @@ def _launch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -
                 tag=args.tag,
                 profile=args.profile,
                 composer_tier=args.composer_tier,
+                grok_tier=getattr(args, "grok_tier", None),
                 opus_enabled=opus_enabled,
+                fable_enabled=fable_enabled,
                 from_prd=args.from_prd,
                 prd=args.prd,
                 skip_analyze=True if args.skip_analyze else None,

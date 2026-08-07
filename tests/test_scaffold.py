@@ -19,7 +19,7 @@ from cyclopsctl.cli import main
 
 
 def test_package_version():
-    assert cyclopsctl.__version__ == "0.1.4"
+    assert cyclopsctl.__version__ == "0.1.7"
 
 
 def test_all_modules_importable():

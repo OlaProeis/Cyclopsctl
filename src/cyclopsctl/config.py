@@ -448,8 +448,15 @@ def _apply_routing_cli_overrides(
     from cyclopsctl.routing import RoutingConfig as ResolvedRoutingConfig
 
     composer_tier_raw = cli.get("composer_tier")
+    grok_tier_raw = cli.get("grok_tier")
     opus_enabled_raw = cli.get("opus_enabled")
-    if composer_tier_raw is None and opus_enabled_raw is None:
+    fable_enabled_raw = cli.get("fable_enabled")
+    if (
+        composer_tier_raw is None
+        and grok_tier_raw is None
+        and opus_enabled_raw is None
+        and fable_enabled_raw is None
+    ):
         return routing
 
     base = routing if routing is not None else ResolvedRoutingConfig()
@@ -459,8 +466,15 @@ def _apply_routing_cli_overrides(
         if not tier:
             raise ConfigError("composer-tier must be a non-empty string")
         updates["composer_tier"] = tier
+    if grok_tier_raw is not None:
+        tier = str(grok_tier_raw).strip()
+        if not tier:
+            raise ConfigError("grok-tier must be a non-empty string")
+        updates["grok_tier"] = tier
     if opus_enabled_raw is not None:
         updates["opus_enabled"] = bool(opus_enabled_raw)
+    if fable_enabled_raw is not None:
+        updates["fable_enabled"] = bool(fable_enabled_raw)
     return replace(base, **updates)
 
 
@@ -507,7 +521,9 @@ def _parse_routing_section(
                 if value is not None
             }
         merged.setdefault("composer_tier", file_rules.composer_tier)
+        merged.setdefault("grok_tier", file_rules.grok_tier)
         merged.setdefault("opus_enabled", file_rules.opus_enabled)
+        merged.setdefault("fable_enabled", file_rules.fable_enabled)
 
     try:
         return parse_routing_config(merged)
@@ -1053,7 +1069,9 @@ def load_run_config(
     export_transcript_dir: Path | None = None,
     cycle_log: Path | str | None = None,
     composer_tier: str | None = None,
+    grok_tier: str | None = None,
     opus_enabled: bool | None = None,
+    fable_enabled: bool | None = None,
 ) -> CyclopsctlConfig:
     """Load TOML (if any), merge with CLI values (CLI wins), validate."""
     file_cfg = load_effective_config(config_path, profile)
@@ -1085,6 +1103,8 @@ def load_run_config(
         "export_transcript_dir": export_transcript_dir,
         "cycle_log": cycle_log,
         "composer_tier": composer_tier,
+        "grok_tier": grok_tier,
         "opus_enabled": opus_enabled,
+        "fable_enabled": fable_enabled,
     }
     return build_run_config(cli_values, file_cfg)

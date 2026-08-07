@@ -48,8 +48,8 @@
 - `tasks/empty-queue-completion.md` - Empty task queue as normal run completion (exit 0, partial `--cycles` stop).
 
 ## Runtime
-- `runtime/model-routing.md` - Complexity report lookup, optional `[routing]` TOML/JSON rules, composer tier, Opus gating, and `ModelRouter`.
-- `runtime/model-discovery.md` - `Cursor.models.list()` wrapper, Composer tier selection (standard/fast), Opus preset detection, and `ModelCapabilities`.
+- `runtime/model-routing.md` - Complexity report lookup, default Composer/Grok/Fable bands, optional `[routing]` TOML/JSON rules, tier flags, and `ModelRouter`.
+- `runtime/model-discovery.md` - `Cursor.models.list()` wrapper, Composer/Grok tier selection (standard/fast), Fable/Opus preset detection, and `ModelCapabilities`.
 - `runtime/agent-session.md` - SDK `create`/`send`/`wait` wrapper, error classification, per-cycle `CycleSession`, and the Windows SDK bridge bootstrap with its env-fallback default client (fixes `missing_api_key` on `run.wait()`).
 - `runtime/cycle-orchestration.md` - Main implement → update run loop, verification gating, and CLI wiring for `cyclopsctl run`.
 - `runtime/structured-logging.md` - Per-cycle text/JSONL logging, `CycleLogger`, and error context helpers.

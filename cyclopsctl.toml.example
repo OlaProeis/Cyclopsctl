@@ -44,26 +44,30 @@ tag = ""
 default_model = "composer-2.5"
 
 # Optional model routing table (backward compatible when omitted).
-# When [routing] is absent, scores 1-8 use standard Composer and 9-10 use Opus.
+# Default bands when [routing] rules are absent:
+#   1-5 → Composer, 6-8 → Grok, 9-10 → Fable high-thinking
 # [routing]
 # composer_tier = "standard"   # "standard" | "fast" | explicit model id
-# opus_enabled = true          # false disables Opus for high-complexity scores
+# grok_tier = "standard"       # "standard" | "fast" (catalog default is often fast)
+# fable_enabled = true         # false disables Fable for complexity 9-10
+# opus_enabled = true          # false disables Opus when custom rules select it
 # rules_file = "routing.json"  # optional JSON file with rules/fallback keys
 #
 # [[routing.rules]]
 # min_score = 1
-# max_score = 6
-# model = "composer-standard"  # aliases: composer-2.5, composer-fast, opus-high-thinking
+# max_score = 5
+# model = "composer-standard"  # aliases: composer, composer-fast, grok, grok-fast,
+#                              # fable / fable-high-thinking, opus / opus-high-thinking
 #
 # [[routing.rules]]
-# min_score = 7
+# min_score = 6
 # max_score = 8
-# model = "composer-2.5"
+# model = "grok"
 #
 # [[routing.rules]]
 # min_score = 9
 # max_score = 10
-# model = "opus-high-thinking"
+# model = "fable-high-thinking"
 #
 # [routing.fallback]
 # model = "composer-2.5"

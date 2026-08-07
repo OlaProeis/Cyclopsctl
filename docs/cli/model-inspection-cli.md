@@ -18,7 +18,7 @@ Uses `CURSOR_API_KEY` from the environment when set. Exit code **1** if `Cursor.
 | `format_models_diagnostic` | `models.py` | Human-readable inventory and routing table |
 | `run_models_inspection` | `cli.py` | Testable entry point for the subcommand |
 
-Output includes every model id, display name, variant params, the resolved Composer preset (complexity 1–8), Opus high-thinking preset (9–10) when available, and fallback behavior when Opus is unavailable.
+Output includes every model id, display name, variant params, the resolved Composer (1–5), Grok (6–8), and Fable (9–10) presets when available, plus optional Opus availability for custom rules.
 
 ## Errors
 

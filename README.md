@@ -236,10 +236,11 @@ Reads `.cyclopsctl/reports/complexity-report.json`:
 
 | Complexity score | Default model |
 |----------------|---------------|
-| 1–8 | `composer-2.5` |
-| 9–10 | Opus 4.8 high thinking |
+| 1–5 | Composer (`composer_tier`: standard or fast) |
+| 6–8 | Grok (`grok_tier`: standard or fast; default **standard** / not-fast) |
+| 9–10 | Fable 5 high-thinking (falls back to Grok if Fable is disabled or unavailable) |
 
-Optional `[routing]` in TOML sets score bands, `composer_tier`, `opus_enabled`, and fallbacks. Inspect presets with `cyclopsctl models`.
+Configure via `[routing]` in `cyclopsctl.toml` (`composer_tier`, `grok_tier`, `fable_enabled`, score-band `[[routing.rules]]`), CLI flags (`--composer-tier`, `--grok-tier`, `--no-fable`), or interactive `cyclopsctl launch` prompts. Full guide: [`docs/runtime/model-routing.md`](docs/runtime/model-routing.md). Inspect presets with `cyclopsctl models`.
 
 ### Exit codes
 

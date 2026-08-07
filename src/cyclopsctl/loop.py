@@ -296,11 +296,16 @@ def _run_implementation_phase(
             session.__exit__(type(impl_exc), impl_exc, impl_exc.__traceback__)
             if (
                 attempt < _IMPLEMENTATION_OPUS_FALLBACK_ATTEMPTS
-                and current_routing.used_opus
+                and current_routing.used_premium
                 and should_retry_with_composer_after_opus_failure(impl_exc)
             ):
+                premium_label = (
+                    "Fable"
+                    if current_routing.used_fable
+                    else "Opus"
+                )
                 log.log_warning(
-                    "Opus agent run failed (billing or credits); "
+                    f"{premium_label} agent run failed (billing or credits); "
                     "retrying implementation with Composer",
                     cycle_number=cycle_number,
                     attempt=attempt,
@@ -311,7 +316,7 @@ def _run_implementation_phase(
                     agent_id=impl_exc.agent_id,
                     run_id=impl_exc.run_id,
                 )
-                model_router.disable_opus_runtime()
+                model_router.disable_premium_runtime()
                 current_routing = model_router.route(task_id)
                 continue
             raise impl_exc

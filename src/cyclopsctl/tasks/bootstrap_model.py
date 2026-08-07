@@ -16,6 +16,7 @@ from cyclopsctl.models import (
     _list_cursor_models,
     detect_composer,
     detect_fable_high_thinking,
+    detect_grok,
     detect_opus_high_thinking,
     detect_opus_max,
     detect_sonnet_max,
@@ -32,6 +33,7 @@ from cyclopsctl.tasks.models import (
 BOOTSTRAP_PRESET_AUTO = "auto"
 BOOTSTRAP_PRESET_COMPOSER = "composer"
 BOOTSTRAP_PRESET_SONNET = "sonnet"
+BOOTSTRAP_PRESET_GROK = "grok"
 BOOTSTRAP_PRESET_FABLE = "fable-high-thinking"
 BOOTSTRAP_PRESET_OPUS = "opus-high-thinking"
 BOOTSTRAP_PRESET_SONNET_MAX = "sonnet-max"
@@ -55,21 +57,26 @@ _BOOTSTRAP_PRESETS: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "4",
+        BOOTSTRAP_PRESET_GROK,
+        "Grok 4.5 — strong agentic parse/analyze; good cost/speed for most PRDs (API credits)",
+    ),
+    (
+        "5",
         BOOTSTRAP_PRESET_FABLE,
         "Fable 5 — high-thinking preset for strong decomposition (API credits)",
     ),
     (
-        "5",
+        "6",
         BOOTSTRAP_PRESET_OPUS,
         "Opus 4.8 — deepest decomposition for large, technical PRDs (higher API credits)",
     ),
     (
-        "6",
+        "7",
         BOOTSTRAP_PRESET_SONNET_MAX,
         "Sonnet Max — extended context for very long PRDs (premium API credits)",
     ),
     (
-        "7",
+        "8",
         BOOTSTRAP_PRESET_OPUS_MAX,
         "Opus 4.8 Max — highest quality for the most complex PRDs (premium API credits)",
     ),
@@ -82,6 +89,10 @@ _PRESET_ALIASES: dict[str, str] = {
     "composer": BOOTSTRAP_PRESET_COMPOSER,
     "s": BOOTSTRAP_PRESET_SONNET,
     "sonnet": BOOTSTRAP_PRESET_SONNET,
+    "g": BOOTSTRAP_PRESET_GROK,
+    "grok": BOOTSTRAP_PRESET_GROK,
+    "grok-4.5": BOOTSTRAP_PRESET_GROK,
+    "grok-standard": BOOTSTRAP_PRESET_GROK,
     "f": BOOTSTRAP_PRESET_FABLE,
     "fable": BOOTSTRAP_PRESET_FABLE,
     "fable-high-thinking": BOOTSTRAP_PRESET_FABLE,
@@ -105,6 +116,7 @@ _LISTING_PRESETS = frozenset(
         BOOTSTRAP_PRESET_AUTO,
         BOOTSTRAP_PRESET_COMPOSER,
         BOOTSTRAP_PRESET_SONNET,
+        BOOTSTRAP_PRESET_GROK,
         BOOTSTRAP_PRESET_FABLE,
         BOOTSTRAP_PRESET_OPUS,
         BOOTSTRAP_PRESET_SONNET_MAX,
@@ -244,7 +256,7 @@ def bootstrap_model_attempt_chain(
     if preset not in _LISTING_PRESETS:
         explicit = ModelSelection(id=preset)
         blob = preset.lower()
-        if "sonnet" in blob or "fable" in blob:
+        if "sonnet" in blob or "fable" in blob or "grok" in blob:
             return [explicit, ModelSelection(id=COMPOSER_MODEL_ID)]
         if "opus" in blob:
             return _credit_aware_fallback_chain(
@@ -279,6 +291,10 @@ def bootstrap_model_attempt_chain(
         if sonnet is not None:
             return [sonnet, composer]
         return [composer]
+
+    if preset == BOOTSTRAP_PRESET_GROK:
+        grok = detect_grok(models, grok_tier="standard") if models else None
+        return _credit_aware_fallback_chain(grok, sonnet, composer=composer)
 
     if preset == BOOTSTRAP_PRESET_FABLE:
         fable = detect_fable_high_thinking(models) if models else None

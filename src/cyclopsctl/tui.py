@@ -1044,9 +1044,10 @@ def render_launch_overview(status: object) -> RenderableType:
     if getattr(status, "profile_names", ()):
         overview.add_row("Profiles", ", ".join(status.profile_names))
     overview.add_row("Composer tier", getattr(status, "default_composer_tier", "standard"))
+    overview.add_row("Grok tier", getattr(status, "default_grok_tier", "standard"))
     overview.add_row(
-        "Opus enabled",
-        "yes" if getattr(status, "default_opus_enabled", True) else "no",
+        "Fable enabled",
+        "yes" if getattr(status, "default_fable_enabled", True) else "no",
     )
     if status.handover_task_id is not None:
         overview.add_row("Handover task", str(status.handover_task_id))
@@ -1093,8 +1094,9 @@ def format_launch_overview_plain(status: object) -> str:
     if profile_names:
         lines.append(f"Profiles: {', '.join(profile_names)}")
     lines.append(f"Composer tier: {getattr(status, 'default_composer_tier', 'standard')}")
-    opus_enabled = getattr(status, "default_opus_enabled", True)
-    lines.append(f"Opus enabled: {'yes' if opus_enabled else 'no'}")
+    lines.append(f"Grok tier: {getattr(status, 'default_grok_tier', 'standard')}")
+    fable_enabled = getattr(status, "default_fable_enabled", True)
+    lines.append(f"Fable enabled: {'yes' if fable_enabled else 'no'}")
     if status.handover_task_id is not None:
         lines.append(f"Handover task ID: {status.handover_task_id}")
     if status.next_task is not None and status.next_task.found and status.next_task.task is not None:

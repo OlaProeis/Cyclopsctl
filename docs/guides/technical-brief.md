@@ -260,12 +260,13 @@ Reads `.cyclopsctl/reports/complexity-report.json` (read-only). Maps parent `tas
 
 | Score | Model |
 |-------|-------|
-| 1–8 | `composer-2.5` |
-| 9–10 | Opus 4.8 **high thinking** (not Max Mode) |
+| 1–5 | Composer (`composer_tier`: standard/fast) |
+| 6–8 | Grok (`grok_tier`: standard/fast; default standard) |
+| 9–10 | Fable 5 **high thinking** (not Max Mode) |
 
-Optional **`[routing]`** TOML: score bands, `composer_tier`, `opus_enabled`, `rules_file`, fallbacks.
+Optional **`[routing]`** TOML: score bands, `composer_tier`, `grok_tier`, `fable_enabled`, `opus_enabled`, `rules_file`, fallbacks. See [`docs/runtime/model-routing.md`](../runtime/model-routing.md).
 
-Fallback to `default_model` when report missing, task absent, or Opus unavailable.
+Fallback to `default_model` / Composer when report missing, task absent, or Grok/Fable unavailable.
 
 ---
 

@@ -10,7 +10,15 @@ from cyclopsctl.config import ConfigError
 PROFILE_SECTION = "profile"
 ROUTING_PROFILE_SECTION = "routing_profile"
 
-ROUTING_TOP_LEVEL_KEYS = frozenset({"composer_tier", "opus_enabled", "rules_file"})
+ROUTING_TOP_LEVEL_KEYS = frozenset(
+    {
+        "composer_tier",
+        "grok_tier",
+        "opus_enabled",
+        "fable_enabled",
+        "rules_file",
+    }
+)
 
 
 class ProfileError(ConfigError):
@@ -137,7 +145,8 @@ def merge_effective_file_config(
     Precedence within file layers: profile values override base values.
     Routing is composed from base ``[routing]``, optional ``routing_profile``
     preset, and profile-level routing overrides (including ``composer_tier``,
-    ``opus_enabled``, and nested ``[profile.<name>.routing]``).
+    ``grok_tier``, ``opus_enabled``, ``fable_enabled``, and nested
+    ``[profile.<name>.routing]``).
     """
     base = _strip_meta_sections(raw_config)
     if profile_name is None:

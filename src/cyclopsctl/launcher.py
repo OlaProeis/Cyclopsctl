@@ -85,7 +85,9 @@ class LaunchChoices:
     tag: str | None
     profile: str | None = None
     composer_tier: str | None = None
+    grok_tier: str | None = None
     opus_enabled: bool | None = None
+    fable_enabled: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +121,9 @@ class LaunchStatus:
     resume_available: bool
     profile_names: tuple[str, ...] = ()
     default_composer_tier: str = "standard"
+    default_grok_tier: str = "standard"
     default_opus_enabled: bool = True
+    default_fable_enabled: bool = True
     next_task_error: str | None = None
     active_tag: str | None = None
 
@@ -220,7 +224,9 @@ def infer_launch_defaults(
     *,
     profile: str | None = None,
     composer_tier: str | None = None,
+    grok_tier: str | None = None,
     opus_enabled: bool | None = None,
+    fable_enabled: bool | None = None,
     strict_handover: bool | None = None,
     fresh: bool | None = None,
     resume: bool | None = None,
@@ -247,7 +253,7 @@ def infer_launch_defaults(
     else:
         resolved_fresh, resolved_resume = False, False
 
-    default_tier, default_opus = resolve_routing_defaults(config, profile=profile)
+    defaults = resolve_routing_defaults(config, profile=profile)
 
     return LaunchChoices(
         cycles=status.suggested_cycles,
@@ -257,8 +263,12 @@ def infer_launch_defaults(
         resume=resolved_resume,
         tag=tag if tag is not None else config.tag,
         profile=profile,
-        composer_tier=composer_tier or default_tier,
-        opus_enabled=opus_enabled if opus_enabled is not None else default_opus,
+        composer_tier=composer_tier or defaults.composer_tier,
+        grok_tier=grok_tier or defaults.grok_tier,
+        opus_enabled=opus_enabled if opus_enabled is not None else defaults.opus_enabled,
+        fable_enabled=(
+            fable_enabled if fable_enabled is not None else defaults.fable_enabled
+        ),
     )
 
 
@@ -385,21 +395,36 @@ def maybe_repair_handover_at_launch(
     return config, refreshed, message
 
 
+@dataclass(frozen=True)
+class RoutingLaunchDefaults:
+    """Default routing choices shown / applied at launch."""
+
+    composer_tier: str = "standard"
+    grok_tier: str = "standard"
+    opus_enabled: bool = True
+    fable_enabled: bool = True
+
+
 def resolve_routing_defaults(
     config: LaunchConfig,
     *,
     profile: str | None = None,
-) -> tuple[str, bool]:
-    """Return default composer tier and Opus enablement for prompts."""
+) -> RoutingLaunchDefaults:
+    """Return default composer/grok tiers and Fable/Opus enablement for prompts."""
     if config.config_path is None:
-        return "standard", True
+        return RoutingLaunchDefaults()
     from cyclopsctl.config import _parse_routing_section
 
     file_cfg = load_effective_config(config.config_path, profile)
     routing = _parse_routing_section(file_cfg, config.project_root)
     if routing is None:
-        return "standard", True
-    return routing.composer_tier, routing.opus_enabled
+        return RoutingLaunchDefaults()
+    return RoutingLaunchDefaults(
+        composer_tier=routing.composer_tier,
+        grok_tier=routing.grok_tier,
+        opus_enabled=routing.opus_enabled,
+        fable_enabled=routing.fable_enabled,
+    )
 
 
 def gather_launch_status(
@@ -446,7 +471,7 @@ def gather_launch_status(
         history_path=config.history_file,
         fresh=False,
     )
-    default_tier, default_opus = resolve_routing_defaults(config)
+    routing_defaults = resolve_routing_defaults(config)
     active_tag = config.tag
     if active_tag is None:
         try:
@@ -465,8 +490,10 @@ def gather_launch_status(
         suggested_cycles=suggest_cycles(pending_count),
         resume_available=startup.resumed,
         profile_names=tuple(discover_profile_names(config)),
-        default_composer_tier=default_tier,
-        default_opus_enabled=default_opus,
+        default_composer_tier=routing_defaults.composer_tier,
+        default_grok_tier=routing_defaults.grok_tier,
+        default_opus_enabled=routing_defaults.opus_enabled,
+        default_fable_enabled=routing_defaults.fable_enabled,
         next_task_error=next_task_error,
         active_tag=active_tag,
     )
@@ -503,8 +530,12 @@ def build_run_argv(config: LaunchConfig, choices: LaunchChoices) -> list[str]:
         argv.extend(["--profile", choices.profile])
     if choices.composer_tier:
         argv.extend(["--composer-tier", choices.composer_tier])
+    if choices.grok_tier:
+        argv.extend(["--grok-tier", choices.grok_tier])
     if choices.opus_enabled is False:
         argv.append("--no-opus")
+    if choices.fable_enabled is False:
+        argv.append("--no-fable")
     if choices.plain:
         argv.append("--plain")
     if choices.strict_handover:
@@ -552,7 +583,8 @@ def format_non_tty_message() -> str:
         "Interactive launcher requires a TTY or explicit --action with flags.\n"
         "Actions:\n"
         "  run       — cyclopsctl launch --action run --cycles N "
-        "[--profile NAME] [--composer-tier standard|fast] [--no-opus] "
+        "[--profile NAME] [--composer-tier standard|fast] "
+        "[--grok-tier standard|fast] [--no-fable] [--no-opus] "
         "[--plain] [--strict-handover] [--fresh|--resume] [--tag TAG] --yes\n"
         "  bootstrap — cyclopsctl launch --action bootstrap "
         "[--from-prd PATH] [--tag TAG] [--skip-analyze] --yes\n"
@@ -653,7 +685,24 @@ def prompt_launch_action(
     return _action_from_index(picked)
 
 
-LAUNCH_OPUS_PROMPT = "Use Opus on high-complexity tasks (complexity 9-10)?"
+LAUNCH_OPUS_PROMPT = "Use Opus on high-complexity tasks (when routing rules select Opus)?"
+LAUNCH_FABLE_PROMPT = "Use Fable on high-complexity tasks (complexity 9-10)?"
+LAUNCH_COMPOSER_TIER_CHOICES = (
+    "Composer standard (recommended)",
+    "Composer fast",
+)
+LAUNCH_GROK_TIER_CHOICES = (
+    "Grok standard / not-fast (recommended for orchestration)",
+    "Grok fast",
+)
+
+
+def _tier_default_index(tier: str | None) -> int:
+    return 1 if (tier or "standard").lower() == "fast" else 0
+
+
+def _tier_from_choice_index(index: int) -> str:
+    return "fast" if index == 1 else "standard"
 
 
 def _format_cycles_confirm_message(cycles: int, handover_task_id: int | None) -> str:
@@ -671,20 +720,24 @@ def prompt_launch_choices(
     inferred: LaunchChoices | None = None,
     profile: str | None = None,
     composer_tier: str | None = None,
+    grok_tier: str | None = None,
     opus_enabled: bool | None = None,
+    fable_enabled: bool | None = None,
     strict_handover: bool | None = None,
     fresh: bool | None = None,
     resume: bool | None = None,
     plain: bool | None = None,
     tag: str | None = None,
 ) -> LaunchChoices | None:
-    """Collect cycle count interactively; return None when the user cancels."""
+    """Collect cycle count and model tiers interactively; None when cancelled."""
     ask = prompts or _DefaultLaunchPrompts()
     defaults = inferred or infer_launch_defaults(
         status,
         profile=profile,
         composer_tier=composer_tier,
+        grok_tier=grok_tier,
         opus_enabled=opus_enabled,
+        fable_enabled=fable_enabled,
         strict_handover=strict_handover,
         fresh=fresh,
         resume=resume,
@@ -698,12 +751,40 @@ def prompt_launch_choices(
         minimum=1,
     )
 
+    resolved_composer_tier = composer_tier
+    if resolved_composer_tier is None:
+        default_composer = getattr(
+            status,
+            "default_composer_tier",
+            defaults.composer_tier,
+        )
+        picked = ask.ask_choice(
+            "Composer tier for complexity 1-5",
+            list(LAUNCH_COMPOSER_TIER_CHOICES),
+            default_index=_tier_default_index(default_composer),
+        )
+        resolved_composer_tier = _tier_from_choice_index(picked)
+
+    resolved_grok_tier = grok_tier
+    if resolved_grok_tier is None:
+        default_grok = getattr(status, "default_grok_tier", defaults.grok_tier)
+        picked = ask.ask_choice(
+            "Grok tier for complexity 6-8",
+            list(LAUNCH_GROK_TIER_CHOICES),
+            default_index=_tier_default_index(default_grok),
+        )
+        resolved_grok_tier = _tier_from_choice_index(picked)
+
+    resolved_fable = fable_enabled
+    if resolved_fable is None:
+        resolved_fable = ask.ask_bool(
+            LAUNCH_FABLE_PROMPT,
+            default=getattr(status, "default_fable_enabled", defaults.fable_enabled),
+        )
+
     resolved_opus = opus_enabled
     if resolved_opus is None:
-        resolved_opus = ask.ask_bool(
-            LAUNCH_OPUS_PROMPT,
-            default=getattr(status, "default_opus_enabled", defaults.opus_enabled),
-        )
+        resolved_opus = getattr(status, "default_opus_enabled", defaults.opus_enabled)
 
     if not ask.ask_confirm(
         _format_cycles_confirm_message(
@@ -722,8 +803,10 @@ def prompt_launch_choices(
         resume=defaults.resume,
         tag=defaults.tag,
         profile=defaults.profile,
-        composer_tier=defaults.composer_tier,
+        composer_tier=resolved_composer_tier,
+        grok_tier=resolved_grok_tier,
         opus_enabled=resolved_opus,
+        fable_enabled=resolved_fable,
     )
 
 
@@ -778,7 +861,9 @@ def resolve_launch_choices(
     tag: str | None,
     profile: str | None,
     composer_tier: str | None,
+    grok_tier: str | None,
     opus_enabled: bool | None,
+    fable_enabled: bool | None,
     assume_yes: bool,
     stdin_is_tty: bool,
 ) -> LaunchChoices | None:
@@ -789,7 +874,9 @@ def resolve_launch_choices(
             status,
             profile=profile,
             composer_tier=composer_tier,
+            grok_tier=grok_tier,
             opus_enabled=opus_enabled,
+            fable_enabled=fable_enabled,
             strict_handover=strict_handover,
             fresh=fresh,
             resume=resume,
@@ -810,7 +897,9 @@ def resolve_launch_choices(
         status,
         profile=profile,
         composer_tier=composer_tier,
+        grok_tier=grok_tier,
         opus_enabled=opus_enabled,
+        fable_enabled=fable_enabled,
         strict_handover=strict_handover,
         fresh=fresh,
         resume=resume,
@@ -826,7 +915,9 @@ def resolve_launch_choices(
         tag=defaults.tag,
         profile=defaults.profile,
         composer_tier=defaults.composer_tier,
+        grok_tier=defaults.grok_tier,
         opus_enabled=defaults.opus_enabled,
+        fable_enabled=defaults.fable_enabled,
     )
     if interactive and not assume_yes:
         confirmed = _DefaultLaunchPrompts().ask_confirm(
@@ -1051,7 +1142,9 @@ def run_launch(
     tag: str | None = None,
     profile: str | None = None,
     composer_tier: str | None = None,
+    grok_tier: str | None = None,
     opus_enabled: bool | None = None,
+    fable_enabled: bool | None = None,
     from_prd: Path | None = None,
     prd: Path | None = None,
     skip_analyze: bool | None = None,
@@ -1193,7 +1286,9 @@ def run_launch(
                 prompts=prompts,
                 profile=profile,
                 composer_tier=composer_tier,
+                grok_tier=grok_tier,
                 opus_enabled=opus_enabled,
+                fable_enabled=fable_enabled,
                 strict_handover=strict_handover,
                 fresh=fresh,
                 resume=resume,
@@ -1210,7 +1305,9 @@ def run_launch(
                     tag=effective_tag,
                     profile=choices.profile,
                     composer_tier=choices.composer_tier,
+                    grok_tier=choices.grok_tier,
                     opus_enabled=choices.opus_enabled,
+                    fable_enabled=choices.fable_enabled,
                 )
         else:
             choices = resolve_launch_choices(
@@ -1223,7 +1320,9 @@ def run_launch(
                 tag=effective_tag,
                 profile=profile,
                 composer_tier=composer_tier,
+                grok_tier=grok_tier,
                 opus_enabled=opus_enabled,
+                fable_enabled=fable_enabled,
                 assume_yes=assume_yes,
                 stdin_is_tty=is_tty,
             )

@@ -178,15 +178,17 @@ def test_run_cycles_retries_implementation_with_composer_after_opus_billing_fail
     cfg = _config(project_tree, cycles=1)
     implementation_attempts = {"count": 0}
     fail_next_implementation = {"value": True}
-    opus = ModelSelection(id="claude-opus-4-8-thinking-high")
+    fable = ModelSelection(id="claude-fable-5")
     router = ModelRouter(
         default_model=COMPOSER_MODEL_ID,
         complexity_report=ComplexityReport(scores={9: 9}),
         capabilities=ModelCapabilities(
             composer=ModelSelection(id=COMPOSER_MODEL_ID),
             composer_standard=ModelSelection(id=COMPOSER_MODEL_ID),
-            opus_available=True,
-            opus=opus,
+            opus_available=False,
+            opus=None,
+            fable_available=True,
+            fable=fable,
         ),
     )
 
@@ -199,7 +201,7 @@ def test_run_cycles_retries_implementation_with_composer_after_opus_billing_fail
                     id=run.id,
                     agent_id=run.agent_id,
                     status="error",
-                    result="Your credit balance is too low to access the Opus API",
+                    result="Your credit balance is too low to access the Fable API",
                 )
             return run
 
@@ -229,7 +231,7 @@ def test_run_cycles_retries_implementation_with_composer_after_opus_billing_fail
 
     assert result.completed_cycles == 1
     assert implementation_attempts["count"] == 2
-    assert router.opus_runtime_enabled is False
+    assert router.fable_runtime_enabled is False
     assert result.outcomes[0].model_id == COMPOSER_MODEL_ID
 
 

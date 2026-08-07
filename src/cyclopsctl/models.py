@@ -18,10 +18,15 @@ from cursor_sdk import (
 
 COMPOSER_MODEL_ID = "composer-2.5"
 COMPOSER_FAST_MODEL_ID = "composer-2.5-fast"
-OPUS_COMPLEXITY_MIN = 9
-COMPOSER_COMPLEXITY_MAX = 8
+GROK_MODEL_ID = "grok-4.5"
+COMPOSER_COMPLEXITY_MAX = 5
+GROK_COMPLEXITY_MIN = 6
+GROK_COMPLEXITY_MAX = 8
+FABLE_COMPLEXITY_MIN = 9
+OPUS_COMPLEXITY_MIN = 9  # retained for diagnostics / custom opus rules
 
 ComposerTierName = Literal["standard", "fast"]
+GrokTierName = Literal["standard", "fast"]
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,24 @@ _COMPOSER_FAST_UNAVAILABLE_WARNING = (
     "Composer fast tier is not available on this account; "
     "falling back to standard Composer"
 )
+_GROK_FAST_UNAVAILABLE_WARNING = (
+    "Grok fast tier is not available on this account; "
+    "falling back to standard Grok"
+)
+_GROK_UNAVAILABLE_WARNING = (
+    "Grok preset is not available on this account; "
+    "mid-complexity tasks will fall back to Composer"
+)
+
+_TRUTHY_PARAM_VALUES = frozenset({"true", "1", "yes", "on"})
+_FALSY_PARAM_VALUES = frozenset({"false", "0", "no", "off"})
+_EFFORT_RANK = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "xhigh": 4,
+    "max": 5,
+}
 
 
 class ModelListingError(RuntimeError):
@@ -44,6 +67,12 @@ class ModelCapabilities:
     opus_available: bool
     opus: ModelSelection | None = None
     composer_fast: ModelSelection | None = None
+    grok_available: bool = False
+    grok: ModelSelection | None = None
+    grok_standard: ModelSelection | None = None
+    grok_fast: ModelSelection | None = None
+    fable_available: bool = False
+    fable: ModelSelection | None = None
 
 
 @dataclass(frozen=True)
@@ -58,10 +87,43 @@ def _normalized_text(*parts: str) -> str:
     return " ".join(part.lower() for part in parts if part)
 
 
-def _is_disqualified_tier(*parts: str) -> bool:
-    """Exclude Max Mode and fast-tier presets (PRD)."""
+def _param_map(params: Sequence[ModelParameterValue]) -> dict[str, str]:
+    return {param.id.lower(): param.value.lower().strip() for param in params}
+
+
+def _params_indicate_fast(params: Sequence[ModelParameterValue]) -> bool:
+    """Return True only when a variant explicitly enables fast mode."""
+    value = _param_map(params).get("fast")
+    return value in _TRUTHY_PARAM_VALUES if value is not None else False
+
+
+def _params_indicate_non_fast(params: Sequence[ModelParameterValue]) -> bool:
+    value = _param_map(params).get("fast")
+    return value in _FALSY_PARAM_VALUES if value is not None else False
+
+
+def _effort_rank(params: Sequence[ModelParameterValue]) -> int:
+    value = _param_map(params).get("effort")
+    if value is None:
+        return 0
+    return _EFFORT_RANK.get(value, 0)
+
+
+def _is_fast_model_id(*parts: str) -> bool:
+    """True for legacy flat fast-tier catalog ids (e.g. ``composer-2.5-fast``)."""
     blob = _normalized_text(*parts)
-    if "fast" in blob:
+    model_id = parts[0].lower() if parts else ""
+    if model_id.endswith("-fast") or model_id.endswith("_fast"):
+        return True
+    if "composer" in blob and "fast" in blob and "false" not in blob:
+        return "-fast" in model_id or model_id.endswith("fast")
+    return False
+
+
+def _is_disqualified_tier(*parts: str) -> bool:
+    """Exclude Max Mode and legacy flat fast-tier model ids from high presets."""
+    blob = _normalized_text(*parts)
+    if _is_fast_model_id(*parts):
         return True
     if "max" in blob and "thinking" not in blob:
         return True
@@ -69,27 +131,33 @@ def _is_disqualified_tier(*parts: str) -> bool:
 
 
 def _variant_rank(model_id: str, variant: ModelVariant) -> int:
+    if _params_indicate_fast(variant.params) or _context_is_max_mode(variant.params):
+        return -1
     param_blob = " ".join(
         f"{param.id} {param.value}" for param in variant.params
     )
     blob = _normalized_text(
         model_id,
-        variant.display_name,
-        variant.description,
+        variant.display_name or "",
+        variant.description or "",
         param_blob,
     )
-    if _is_disqualified_tier(blob):
+    if _is_disqualified_tier(model_id, variant.display_name or "", variant.description or ""):
         return -1
     if "opus" not in blob:
         return -1
 
+    params = _param_map(variant.params)
     score = 0
-    if "4-8" in blob or "4.8" in blob:
+    if "4-8" in blob or "4.8" in blob or "opus-5" in blob or "opus 5" in blob:
         score += 20
-    if "thinking" in blob:
+    if params.get("thinking") in _TRUTHY_PARAM_VALUES:
         score += 30
-    if "high" in blob:
-        score += 25
+    elif "thinking" in blob and "thinking false" not in blob:
+        score += 20
+    effort = _effort_rank(variant.params)
+    if effort >= 3:
+        score += 25 + min(effort, 3)
     if any(
         param.id.lower() in {"reasoning", "reasoning_effort", "thinking"}
         and "high" in param.value.lower()
@@ -145,6 +213,10 @@ def _is_extended_context_param(param: ModelParameterValue) -> bool:
         except ValueError:
             return False
     return False
+
+
+def _context_is_max_mode(params: Sequence[ModelParameterValue]) -> bool:
+    return any(_is_extended_context_param(param) for param in params)
 
 
 def _is_max_mode_toggle_param(param: ModelParameterValue) -> bool:
@@ -296,29 +368,42 @@ def _fable_model_rank(model: SDKModel) -> int:
 
 
 def _fable_variant_rank(model_id: str, variant: ModelVariant) -> int:
-    param_blob = " ".join(
-        f"{param.id} {param.value}" for param in variant.params
-    )
+    if _params_indicate_fast(variant.params) or _context_is_max_mode(variant.params):
+        return -1
     blob = _normalized_text(
         model_id,
-        variant.display_name,
-        variant.description,
-        param_blob,
+        variant.display_name or "",
+        variant.description or "",
     )
-    if _is_disqualified_tier(blob) or not _is_fable_model_blob(blob):
+    if _is_disqualified_tier(model_id, variant.display_name or "", variant.description or ""):
+        return -1
+    if not _is_fable_model_blob(
+        _normalized_text(model_id, variant.display_name or "", variant.description or "")
+    ) and "fable" not in model_id.lower():
         return -1
 
+    params = _param_map(variant.params)
     score = 0
-    if "5" in model_id or "fable-5" in blob:
+    if "5" in model_id or "fable-5" in blob or "fable 5" in blob:
         score += 20
-    if "thinking" in blob or "high" in blob:
-        score += 30
+    if params.get("thinking") in _TRUTHY_PARAM_VALUES:
+        score += 40
+    elif "thinking" in blob:
+        score += 20
+    effort = _effort_rank(variant.params)
+    # Prefer high (not xhigh/max) for the standard high-thinking routing preset.
+    if effort == 3:
+        score += 35
+    elif effort == 2:
+        score += 15
+    elif effort >= 4:
+        score += 10
     if any(
-        param.id.lower() in {"reasoning", "reasoning_effort", "thinking"}
+        param.id.lower() in {"reasoning", "reasoning_effort"}
         and "high" in param.value.lower()
         for param in variant.params
     ):
-        score += 40
+        score += 20
     return score
 
 
@@ -326,12 +411,16 @@ def detect_fable_high_thinking(models: Sequence[SDKModel]) -> ModelSelection | N
     """
     Pick a Fable 5 high-thinking preset from account model listings.
 
-    Prefers variant params over hardcoded ids; excludes Max Mode and fast tiers.
+    Prefers ``thinking=true`` + ``effort=high`` on non-Max context; excludes fast.
     """
     best: tuple[int, ModelSelection] | None = None
 
     for model in models:
         model_base_rank = _fable_model_rank(model)
+        if model_base_rank < 0 and not _is_fable_model_blob(
+            _normalized_text(model.id, model.display_name or "", model.description or "")
+        ):
+            continue
         candidates: list[tuple[int, ModelSelection]] = []
 
         for variant in model.variants:
@@ -349,7 +438,7 @@ def detect_fable_high_thinking(models: Sequence[SDKModel]) -> ModelSelection | N
             candidates.append((model_base_rank, ModelSelection(id=model.id)))
 
         for rank, selection in candidates:
-            combined = rank + model_base_rank
+            combined = rank + max(model_base_rank, 0)
             if best is None or combined > best[0]:
                 best = (combined, selection)
 
@@ -390,31 +479,61 @@ def detect_opus_high_thinking(models: Sequence[SDKModel]) -> ModelSelection | No
     return best[1] if best else None
 
 
-def _is_fast_composer(*parts: str) -> bool:
-    blob = _normalized_text(*parts)
-    return "composer" in blob and "fast" in blob
+def _is_composer_model(model: SDKModel) -> bool:
+    blob = _normalized_text(model.id, model.display_name or "", model.description or "")
+    return "composer" in blob
 
 
-def _is_standard_composer(*parts: str) -> bool:
-    blob = _normalized_text(*parts)
-    if "composer" not in blob:
-        return False
-    if "fast" in blob:
-        return False
-    return not _is_disqualified_tier(blob)
+def _pick_composer_variant(
+    models: Sequence[SDKModel],
+    *,
+    want_fast: bool,
+) -> ModelSelection | None:
+    """Pick Composer with explicit ``fast`` variant params when listed."""
+    best: tuple[int, ModelSelection] | None = None
+    for model in models:
+        if not _is_composer_model(model):
+            continue
+        model_id = model.id.lower()
+        # Prefer composer-2.5 over composer-2.
+        base = 20 if "2.5" in model_id or "2-5" in model_id else 10
+        if model.variants:
+            for variant in model.variants:
+                is_fast = _params_indicate_fast(variant.params)
+                is_non_fast = _params_indicate_non_fast(variant.params)
+                if want_fast and not is_fast:
+                    continue
+                if not want_fast and is_fast:
+                    continue
+                if not want_fast and not is_non_fast and variant.params:
+                    # Variant has params but no explicit fast=false — skip.
+                    continue
+                rank = base + (5 if is_fast == want_fast else 0)
+                selection = ModelSelection(id=model.id, params=tuple(variant.params))
+                if best is None or rank > best[0]:
+                    best = (rank, selection)
+            continue
+
+        # Legacy flat catalog ids.
+        if want_fast and _is_fast_model_id(model.id, model.display_name or ""):
+            selection = ModelSelection(id=model.id)
+            if best is None or base > best[0]:
+                best = (base, selection)
+        elif not want_fast and not _is_fast_model_id(model.id, model.display_name or ""):
+            selection = ModelSelection(id=model.id)
+            if best is None or base > best[0]:
+                best = (base, selection)
+    return best[1] if best else None
 
 
 def _detect_composer_fast(models: Sequence[SDKModel]) -> ModelSelection | None:
-    for model in models:
-        if _is_fast_composer(model.id, model.display_name, model.description):
-            return ModelSelection(id=model.id)
-    return None
+    return _pick_composer_variant(models, want_fast=True)
 
 
 def _detect_composer_standard(models: Sequence[SDKModel]) -> ModelSelection:
-    for model in models:
-        if _is_standard_composer(model.id, model.display_name, model.description):
-            return ModelSelection(id=model.id)
+    selected = _pick_composer_variant(models, want_fast=False)
+    if selected is not None:
+        return selected
     return ModelSelection(id=COMPOSER_MODEL_ID)
 
 
@@ -428,6 +547,7 @@ def detect_composer(
 
     ``composer_tier`` may be ``standard``, ``fast``, or an explicit model id.
     Fast tier falls back to standard when unavailable.
+    Prefers explicit ``fast=false`` / ``fast=true`` variant params when listed.
     """
     tier = composer_tier.strip()
     if not tier:
@@ -446,6 +566,88 @@ def detect_composer(
     return _detect_composer_standard(models)
 
 
+def _is_grok_model(model: SDKModel) -> bool:
+    blob = _normalized_text(model.id, model.display_name or "", model.description or "")
+    return "grok" in blob
+
+
+def _pick_grok_variant(
+    models: Sequence[SDKModel],
+    *,
+    want_fast: bool,
+) -> ModelSelection | None:
+    """Pick Grok with ``effort=high`` and the requested ``fast`` flag."""
+    best: tuple[int, ModelSelection] | None = None
+    for model in models:
+        if not _is_grok_model(model):
+            continue
+        if _is_disqualified_tier(model.id, model.display_name or "", model.description or ""):
+            # Allow base grok ids; only skip explicitly disqualified flat max ids.
+            if "max" in model.id.lower():
+                continue
+        base = 20 if "4.5" in model.id or "4-5" in model.id else 10
+        if not model.variants:
+            if want_fast == _is_fast_model_id(model.id, model.display_name or ""):
+                selection = ModelSelection(id=model.id)
+                if best is None or base > best[0]:
+                    best = (base, selection)
+            continue
+        for variant in model.variants:
+            is_fast = _params_indicate_fast(variant.params)
+            is_non_fast = _params_indicate_non_fast(variant.params)
+            if want_fast and not is_fast:
+                continue
+            if not want_fast and is_fast:
+                continue
+            if not want_fast and variant.params and not is_non_fast:
+                continue
+            effort = _effort_rank(variant.params)
+            # Prefer high effort for orchestration cycles (not low/medium).
+            rank = base + (30 if effort == 3 else effort * 5)
+            selection = ModelSelection(id=model.id, params=tuple(variant.params))
+            if best is None or rank > best[0]:
+                best = (rank, selection)
+    return best[1] if best else None
+
+
+def detect_grok_standard(models: Sequence[SDKModel]) -> ModelSelection | None:
+    """Pick non-fast Grok (``effort=high``, ``fast=false`` when listed)."""
+    return _pick_grok_variant(models, want_fast=False)
+
+
+def detect_grok_fast(models: Sequence[SDKModel]) -> ModelSelection | None:
+    """Pick fast Grok (``effort=high``, ``fast=true`` when listed)."""
+    return _pick_grok_variant(models, want_fast=True)
+
+
+def detect_grok(
+    models: Sequence[SDKModel],
+    *,
+    grok_tier: str = "standard",
+) -> ModelSelection | None:
+    """
+    Resolve Grok preset from listings.
+
+    ``grok_tier`` may be ``standard``, ``fast``, or an explicit model id.
+    Standard prefers non-fast high-effort variants (catalog default is often fast).
+    """
+    tier = grok_tier.strip() if grok_tier else "standard"
+    if not tier:
+        tier = "standard"
+    normalized = tier.lower()
+    if normalized not in {"standard", "fast"}:
+        return ModelSelection(id=tier)
+
+    if normalized == "fast":
+        fast = detect_grok_fast(models)
+        if fast is not None:
+            return fast
+        logger.warning(_GROK_FAST_UNAVAILABLE_WARNING)
+        return detect_grok_standard(models)
+
+    return detect_grok_standard(models)
+
+
 def _list_cursor_models(
     *,
     list_models: Callable[..., list[SDKModel]] | None = None,
@@ -462,22 +664,35 @@ def discover_model_capabilities(
     models: Sequence[SDKModel] | None = None,
     *,
     composer_tier: str = "standard",
+    grok_tier: str = "standard",
     list_models: Callable[..., list[SDKModel]] | None = None,
     api_key: str | None = None,
 ) -> ModelCapabilities:
-    """Inspect Cursor models and expose Composer / Opus presets for routing."""
+    """Inspect Cursor models and expose Composer / Grok / Fable / Opus presets."""
     if models is None:
         models = _list_cursor_models(list_models=list_models, api_key=api_key)
 
     opus = detect_opus_high_thinking(models)
+    fable = detect_fable_high_thinking(models)
     composer_standard = _detect_composer_standard(models)
     composer_fast = _detect_composer_fast(models)
+    grok_standard = detect_grok_standard(models)
+    grok_fast = detect_grok_fast(models)
+    grok = detect_grok(models, grok_tier=grok_tier)
+    if grok is None:
+        logger.warning(_GROK_UNAVAILABLE_WARNING)
     return ModelCapabilities(
         composer=detect_composer(models, composer_tier=composer_tier),
         composer_standard=composer_standard,
         composer_fast=composer_fast,
+        grok_available=grok is not None,
+        grok=grok,
+        grok_standard=grok_standard,
+        grok_fast=grok_fast,
         opus_available=opus is not None,
         opus=opus,
+        fable_available=fable is not None,
+        fable=fable,
     )
 
 
@@ -542,27 +757,54 @@ def format_models_diagnostic(inventory: ModelInventory) -> str:
         ]
     )
 
+    if caps.grok_available and caps.grok is not None:
+        lines.append(
+            f"Grok (complexity {GROK_COMPLEXITY_MIN}-{GROK_COMPLEXITY_MAX}): "
+            f"{_format_selection(caps.grok)}"
+        )
+        lines.append("Grok route available: yes")
+    else:
+        lines.append(
+            f"Grok (complexity {GROK_COMPLEXITY_MIN}-{GROK_COMPLEXITY_MAX}): unavailable"
+        )
+        lines.append("Grok route available: no")
+        lines.append(
+            f"Fallback for complexity {GROK_COMPLEXITY_MIN}-{GROK_COMPLEXITY_MAX}: "
+            f"{_format_selection(caps.composer)}"
+        )
+
+    if caps.fable_available and caps.fable is not None:
+        lines.append(
+            f"Fable high-thinking (complexity {FABLE_COMPLEXITY_MIN}-10): "
+            f"{_format_selection(caps.fable)}"
+        )
+        lines.append("Fable route available: yes")
+    else:
+        lines.append(
+            f"Fable high-thinking (complexity {FABLE_COMPLEXITY_MIN}-10): unavailable"
+        )
+        lines.append("Fable route available: no")
+
     if caps.opus_available and caps.opus is not None:
         lines.append(
-            f"Opus high-thinking (complexity {OPUS_COMPLEXITY_MIN}-10): "
-            f"{_format_selection(caps.opus)}"
+            f"Opus high-thinking (optional custom rules): {_format_selection(caps.opus)}"
         )
         lines.append("Opus route available: yes")
     else:
-        lines.append(
-            f"Opus high-thinking (complexity {OPUS_COMPLEXITY_MIN}-10): unavailable"
-        )
+        lines.append("Opus high-thinking (optional custom rules): unavailable")
         lines.append("Opus route available: no")
+
+    if not caps.fable_available:
         lines.append(
-            f"Fallback for complexity {OPUS_COMPLEXITY_MIN}-10: "
+            f"Fallback for complexity {FABLE_COMPLEXITY_MIN}-10: "
             f"{_format_selection(caps.composer)}"
         )
 
     lines.extend(
         [
             "",
-            "Use the Opus preset above for high-complexity routing when your account",
-            "exposes non-standard model ids or variant names.",
+            "Default bands: Composer 1-5, Grok 6-8, Fable 9-10.",
+            "Set composer_tier / grok_tier (standard|fast) in [routing] or at launch.",
         ]
     )
     return "\n".join(lines)

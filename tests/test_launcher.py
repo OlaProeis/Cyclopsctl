@@ -19,6 +19,7 @@ from cyclopsctl.doctor import (
 )
 from cyclopsctl.launcher import (
     BootstrapChoices,
+    LAUNCH_FABLE_PROMPT,
     LAUNCH_OPUS_PROMPT,
     LaunchAction,
     LaunchChoices,
@@ -152,6 +153,9 @@ class FakePrompts:
     cycles: int = 2
     confirm: bool = True
     opus: bool = True
+    fable: bool = True
+    composer_choice: int | None = None
+    grok_choice: int | None = None
     action_choice: int = 0
     analyze_complexity: bool = True
     prd_path: str = ""
@@ -169,14 +173,22 @@ class FakePrompts:
     def ask_bool(self, prompt: str, *, default: bool) -> bool:
         if "analyze-complexity" in prompt:
             return self.analyze_complexity
+        if prompt == LAUNCH_FABLE_PROMPT:
+            self.prompts_seen.append(prompt)
+            return self.fable
         if prompt == LAUNCH_OPUS_PROMPT:
             self.prompts_seen.append(prompt)
             return self.opus
         return default
 
     def ask_choice(self, prompt: str, choices: list[str], *, default_index: int) -> int:
+        self.prompts_seen.append(prompt)
         if prompt == "Launcher action":
             return self.action_choice
+        if "Composer tier" in prompt:
+            return default_index if self.composer_choice is None else self.composer_choice
+        if "Grok tier" in prompt:
+            return default_index if self.grok_choice is None else self.grok_choice
         return default_index
 
     def ask_str(self, prompt: str, *, default: str) -> str:
@@ -226,7 +238,9 @@ def test_build_run_argv_without_config(project_tree: Path):
         tag="phase-2",
         profile="daytime-fast",
         composer_tier="fast",
+        grok_tier="standard",
         opus_enabled=False,
+        fable_enabled=False,
     )
     argv = build_run_argv(config, choices)
     assert argv[:4] == ["run", "--cycles", "4", "--project-root"]
@@ -237,7 +251,9 @@ def test_build_run_argv_without_config(project_tree: Path):
     assert "--fresh" in argv
     assert "--profile" in argv and "daytime-fast" in argv
     assert "--composer-tier" in argv and "fast" in argv
+    assert "--grok-tier" in argv and "standard" in argv
     assert "--no-opus" in argv
+    assert "--no-fable" in argv
     assert "--tag" in argv
     assert "phase-2" in argv
 
@@ -350,16 +366,20 @@ def test_prompt_launch_choices_mocked():
         resume=True,
         tag="master",
         composer_tier="standard",
+        grok_tier="standard",
         opus_enabled=True,
+        fable_enabled=True,
     )
     assert prompts.prompts_seen == [
         "Number of cycles",
-        LAUNCH_OPUS_PROMPT,
+        "Composer tier for complexity 1-5",
+        "Grok tier for complexity 6-8",
+        LAUNCH_FABLE_PROMPT,
         _format_cycles_confirm_message(3, 14),
     ]
 
 
-def test_prompt_launch_choices_respects_no_opus_flag():
+def test_prompt_launch_choices_respects_no_fable_flag():
     config = LaunchConfig(
         project_root=Path("/tmp/project"),
         first_prompt=Path("/tmp/project/first.md"),
@@ -375,18 +395,20 @@ def test_prompt_launch_choices_respects_no_opus_flag():
             "config": config,
             "suggested_cycles": 2,
             "resume_available": False,
-            "default_opus_enabled": True,
+            "default_fable_enabled": True,
         },
     )()
     prompts = FakePrompts(cycles=2)
     choices = prompt_launch_choices(
         launch_status,
         prompts=prompts,
-        opus_enabled=False,
+        composer_tier="standard",
+        grok_tier="standard",
+        fable_enabled=False,
     )
     assert choices is not None
-    assert choices.opus_enabled is False
-    assert LAUNCH_OPUS_PROMPT not in prompts.prompts_seen
+    assert choices.fable_enabled is False
+    assert LAUNCH_FABLE_PROMPT not in prompts.prompts_seen
 
 
 def test_prompt_launch_choices_cancelled():
@@ -477,7 +499,9 @@ def test_run_launch_non_tty_with_flags_assembles_argv(project_tree: Path):
             fresh=True,
             tag="dev",
             composer_tier="fast",
+            grok_tier="fast",
             opus_enabled=False,
+            fable_enabled=False,
             assume_yes=True,
             stdin_is_tty=False,
             stderr_is_tty=False,
@@ -492,7 +516,9 @@ def test_run_launch_non_tty_with_flags_assembles_argv(project_tree: Path):
     assert "--strict-handover" in argv
     assert "--fresh" in argv
     assert "--composer-tier" in argv and "fast" in argv
+    assert "--grok-tier" in argv and "fast" in argv
     assert "--no-opus" in argv
+    assert "--no-fable" in argv
     assert "--tag" in argv and "dev" in argv
 
 
@@ -635,7 +661,9 @@ def test_infer_launch_defaults_auto_resume():
     assert choices.fresh is False
     assert choices.tag == "phase-4"
     assert choices.composer_tier == "standard"
+    assert choices.grok_tier == "standard"
     assert choices.opus_enabled is True
+    assert choices.fable_enabled is True
 
 
 def test_infer_launch_defaults_respects_explicit_fresh():
@@ -805,7 +833,9 @@ def test_run_launch_tty_only_prompts_for_cycles(project_tree: Path):
     assert "--cycles" in dispatch.argv and "4" in dispatch.argv
     assert prompts.prompts_seen == [
         "Number of cycles",
-        LAUNCH_OPUS_PROMPT,
+        "Composer tier for complexity 1-5",
+        "Grok tier for complexity 6-8",
+        LAUNCH_FABLE_PROMPT,
         _format_cycles_confirm_message(4, 14),
     ]
 
@@ -839,7 +869,9 @@ def test_resolve_launch_choices_non_interactive():
         tag="dev",
         profile="fast-profile",
         composer_tier="fast",
+        grok_tier="standard",
         opus_enabled=False,
+        fable_enabled=True,
         assume_yes=True,
         stdin_is_tty=False,
     )
@@ -852,7 +884,9 @@ def test_resolve_launch_choices_non_interactive():
         tag="dev",
         profile="fast-profile",
         composer_tier="fast",
+        grok_tier="standard",
         opus_enabled=False,
+        fable_enabled=True,
     )
 
 
@@ -885,7 +919,9 @@ def test_resolve_launch_choices_infers_resume_when_unspecified():
         tag=None,
         profile=None,
         composer_tier=None,
+        grok_tier=None,
         opus_enabled=None,
+        fable_enabled=None,
         assume_yes=True,
         stdin_is_tty=False,
     )

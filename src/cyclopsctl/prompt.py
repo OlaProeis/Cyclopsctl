@@ -272,9 +272,15 @@ def format_model_selection(complexity: int | None) -> str:
         )
     if complexity >= 9:
         return (
-            f"Complexity **{complexity}** → **Opus 4.8 high-thinking** "
-            f"(`opus-high-thinking`). Informational only; the cyclopsctl selects "
+            f"Complexity **{complexity}** → **Fable 5 high-thinking** "
+            f"(`fable-high-thinking`). Informational only; the cyclopsctl selects "
             f"the runtime model from the complexity report when using automated runs."
+        )
+    if complexity >= 6:
+        return (
+            f"Complexity **{complexity}** → **Grok 4.5** (`grok`). "
+            f"Informational only; the cyclopsctl selects the runtime model from "
+            f"the complexity report when using automated runs."
         )
     return (
         f"Complexity **{complexity}** → **Composer 2.5** (`composer-2.5`). "

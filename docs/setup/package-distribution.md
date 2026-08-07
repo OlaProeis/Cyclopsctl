@@ -5,7 +5,7 @@ Install cyclopsctl globally via **`pip install`** from git (no clone required) o
 ## Version reporting
 
 - `cyclopsctl --version` prints the installed distribution version via `importlib.metadata` (`src/cyclopsctl/version.py`).
-- `cyclopsctl.version.get_package_version()` falls back to `0.1.4` when the package is not installed (editable dev without metadata).
+- `cyclopsctl.version.get_package_version()` falls back to `0.1.7` when the package is not installed (editable dev without metadata).
 
 ## Shell installers
 

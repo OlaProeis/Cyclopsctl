@@ -60,7 +60,9 @@ def _opus_models() -> list[SDKModel]:
 
 def _capabilities(
     *,
-    opus: ModelSelection | None,
+    opus: ModelSelection | None = None,
+    fable: ModelSelection | None = None,
+    grok: ModelSelection | None = None,
     composer_id: str = COMPOSER_MODEL_ID,
     composer_fast: ModelSelection | None = None,
 ) -> ModelCapabilities:
@@ -69,8 +71,14 @@ def _capabilities(
         composer=composer,
         composer_standard=composer,
         composer_fast=composer_fast,
+        grok_available=grok is not None,
+        grok=grok,
+        grok_standard=grok,
+        grok_fast=None,
         opus_available=opus is not None,
         opus=opus,
+        fable_available=fable is not None,
+        fable=fable,
     )
 
 
@@ -100,27 +108,52 @@ def test_route_low_complexity_uses_composer():
     router = ModelRouter(
         complexity_report=ComplexityReport(scores={3: 4}),
         capabilities=_capabilities(
-            opus=ModelSelection(id="claude-opus-4-8-thinking-high")
+            fable=ModelSelection(id="claude-fable-5"),
+            grok=ModelSelection(id="grok-4.5"),
         ),
     )
     decision = router.route(3)
     assert decision.model.id == COMPOSER_MODEL_ID
     assert decision.used_opus is False
+    assert decision.used_grok is False
     assert decision.complexity_score == 4
 
 
-def test_route_high_complexity_uses_opus():
-    opus = ModelSelection(
-        id="claude-opus-4-8-thinking-high",
-        params=(ModelParameterValue(id="reasoning", value="high"),),
+def test_route_mid_complexity_uses_grok():
+    grok = ModelSelection(
+        id="grok-4.5",
+        params=(
+            ModelParameterValue(id="effort", value="high"),
+            ModelParameterValue(id="fast", value="false"),
+        ),
+    )
+    router = ModelRouter(
+        complexity_report=ComplexityReport(scores={5: 7}),
+        capabilities=_capabilities(grok=grok, fable=ModelSelection(id="claude-fable-5")),
+    )
+    decision = router.route(5)
+    assert decision.model == grok
+    assert decision.used_grok is True
+    assert decision.used_fable is False
+    assert decision.fallback is False
+
+
+def test_route_high_complexity_uses_fable():
+    fable = ModelSelection(
+        id="claude-fable-5",
+        params=(
+            ModelParameterValue(id="thinking", value="true"),
+            ModelParameterValue(id="effort", value="high"),
+        ),
     )
     router = ModelRouter(
         complexity_report=ComplexityReport(scores={7: 9}),
-        capabilities=_capabilities(opus=opus),
+        capabilities=_capabilities(fable=fable, grok=ModelSelection(id="grok-4.5")),
     )
     decision = router.route(7)
-    assert decision.model == opus
-    assert decision.used_opus is True
+    assert decision.model == fable
+    assert decision.used_fable is True
+    assert decision.used_opus is False
     assert decision.fallback is False
 
 
@@ -128,7 +161,8 @@ def test_route_missing_score_falls_back_to_composer():
     router = ModelRouter(
         complexity_report=ComplexityReport(scores={1: 5}),
         capabilities=_capabilities(
-            opus=ModelSelection(id="claude-opus-4-8-thinking-high")
+            fable=ModelSelection(id="claude-fable-5"),
+            grok=ModelSelection(id="grok-4.5"),
         ),
     )
     decision = router.route(99)
@@ -141,7 +175,8 @@ def test_route_missing_report_uses_composer():
     router = ModelRouter(
         complexity_report=ComplexityReport(scores={}),
         capabilities=_capabilities(
-            opus=ModelSelection(id="claude-opus-4-8-thinking-high")
+            fable=ModelSelection(id="claude-fable-5"),
+            grok=ModelSelection(id="grok-4.5"),
         ),
     )
     decision = router.route(5)
@@ -149,14 +184,31 @@ def test_route_missing_report_uses_composer():
     assert decision.fallback is True
 
 
-def test_route_opus_unavailable_falls_back_and_warns_once(
+def test_route_fable_unavailable_falls_back_to_grok():
+    grok = ModelSelection(id="grok-4.5")
+    router = ModelRouter(
+        default_model="my-default-model",
+        complexity_report=ComplexityReport(scores={7: 10, 8: 9}),
+        capabilities=_capabilities(fable=None, grok=grok),
+    )
+
+    first = router.route(7)
+    second = router.route(8)
+
+    assert first.model == grok
+    assert second.model == grok
+    assert first.used_grok is True
+    assert first.fallback is True
+
+
+def test_route_fable_and_grok_unavailable_falls_back_and_warns_once(
     caplog: pytest.LogCaptureFixture,
 ):
     caplog.set_level(logging.WARNING)
     router = ModelRouter(
         default_model="my-default-model",
         complexity_report=ComplexityReport(scores={7: 10, 8: 9}),
-        capabilities=_capabilities(opus=None),
+        capabilities=_capabilities(fable=None, grok=None),
     )
 
     first = router.route(7)
@@ -166,31 +218,77 @@ def test_route_opus_unavailable_falls_back_and_warns_once(
     assert second.model.id == "my-default-model"
     assert first.fallback is True
     assert second.fallback is True
-    opus_warnings = [r for r in caplog.records if "Opus high-thinking" in r.message]
-    assert len(opus_warnings) == 1
+    fable_warnings = [r for r in caplog.records if "Fable high-thinking" in r.message]
+    assert len(fable_warnings) == 1
 
 
 def test_router_from_paths_integration(tmp_path: Path):
     report_path = tmp_path / "report.json"
-    report_path.write_text(json.dumps(_sample_report()), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            {
+                "complexityAnalysis": [
+                    {"taskId": 3, "complexityScore": 4},
+                    {"taskId": 7, "complexityScore": 8},
+                    {"taskId": 8, "complexityScore": 10},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    models = [
+        SDKModel(id="composer-2.5", display_name="Composer 2.5"),
+        SDKModel(
+            id="grok-4.5",
+            display_name="Grok 4.5",
+            variants=(
+                ModelVariant(
+                    display_name="High",
+                    params=(
+                        ModelParameterValue(id="effort", value="high"),
+                        ModelParameterValue(id="fast", value="false"),
+                    ),
+                ),
+            ),
+        ),
+        SDKModel(
+            id="claude-fable-5",
+            display_name="Fable 5",
+            variants=(
+                ModelVariant(
+                    display_name="High thinking",
+                    params=(
+                        ModelParameterValue(id="thinking", value="true"),
+                        ModelParameterValue(id="context", value="300k"),
+                        ModelParameterValue(id="effort", value="high"),
+                    ),
+                ),
+            ),
+        ),
+    ]
 
     router = ModelRouter.from_paths(
         complexity_report_path=report_path,
         default_model="composer-2.5",
-        list_models=lambda **_: _opus_models(),
+        list_models=lambda **_: models,
     )
 
     low = router.route(3)
-    high = router.route(7)
+    mid = router.route(7)
+    high = router.route(8)
 
     assert low.model.id == COMPOSER_MODEL_ID
-    assert high.used_opus is True
-    assert high.model.id == "claude-opus-4-8-thinking-high"
+    assert mid.used_grok is True
+    assert mid.model.id == "grok-4.5"
+    assert high.used_fable is True
+    assert high.model.id == "claude-fable-5"
 
 
-def test_disable_opus_runtime_forces_composer_for_high_scores():
-    opus = ModelSelection(id="claude-opus-4-8-thinking-high")
-    caps = _capabilities(opus=opus)
+def test_disable_premium_runtime_falls_back_to_grok_for_high_scores():
+    fable = ModelSelection(id="claude-fable-5")
+    grok = ModelSelection(id="grok-4.5")
+    caps = _capabilities(fable=fable, grok=grok)
     router = ModelRouter(
         default_model=COMPOSER_MODEL_ID,
         complexity_report=ComplexityReport(scores={6: 9}),
@@ -198,20 +296,22 @@ def test_disable_opus_runtime_forces_composer_for_high_scores():
     )
 
     before = router.route(6)
-    assert before.used_opus is True
+    assert before.used_fable is True
 
-    router.disable_opus_runtime()
+    router.disable_premium_runtime()
     after = router.route(6)
 
-    assert after.used_opus is False
-    assert after.model.id == COMPOSER_MODEL_ID
+    assert after.used_fable is False
+    assert after.used_grok is True
+    assert after.model == grok
     assert after.fallback is True
 
 
 def test_legacy_routing_golden_parity_across_score_bands():
-    opus = ModelSelection(id="claude-opus-4-8-thinking-high")
-    caps = _capabilities(opus=opus)
-    for score in range(1, 9):
+    grok = ModelSelection(id="grok-4.5")
+    fable = ModelSelection(id="claude-fable-5")
+    caps = _capabilities(grok=grok, fable=fable)
+    for score in range(1, 6):
         decision = resolve_model_for_score(
             score,
             routing_config=None,
@@ -219,8 +319,19 @@ def test_legacy_routing_golden_parity_across_score_bands():
             default_model="composer-2.5",
         )
         assert decision.model.id == COMPOSER_MODEL_ID
-        assert decision.used_opus is False
+        assert decision.used_grok is False
+        assert decision.used_fable is False
         assert decision.fallback is False
+
+    for score in (6, 7, 8):
+        decision = resolve_model_for_score(
+            score,
+            routing_config=None,
+            capabilities=caps,
+            default_model="composer-2.5",
+        )
+        assert decision.model == grok
+        assert decision.used_grok is True
 
     for score in (9, 10):
         decision = resolve_model_for_score(
@@ -229,8 +340,8 @@ def test_legacy_routing_golden_parity_across_score_bands():
             capabilities=caps,
             default_model="composer-2.5",
         )
-        assert decision.model == opus
-        assert decision.used_opus is True
+        assert decision.model == fable
+        assert decision.used_fable is True
 
 
 def test_configured_rules_match_score_bands():
@@ -295,10 +406,50 @@ def test_opus_gating_disables_high_complexity_opus_route():
         routing_config=routing,
         capabilities=caps,
         default_model="composer-2.5",
+        opus_enabled=False,
     )
 
     assert decision.model.id == COMPOSER_MODEL_ID
     assert decision.used_opus is False
+    assert decision.fallback is True
+
+
+def test_fable_gating_falls_back_to_grok_then_composer():
+    routing = RoutingConfig(
+        rules=(RoutingRule(min_score=9, max_score=10, model="fable-high-thinking"),),
+        fallback=RoutingFallback(model="composer-standard"),
+        fable_enabled=False,
+    )
+    grok = ModelSelection(id="grok-4.5")
+    caps = _capabilities(fable=ModelSelection(id="claude-fable-5"), grok=grok)
+
+    decision = resolve_model_for_score(
+        10,
+        routing_config=routing,
+        capabilities=caps,
+        default_model="composer-2.5",
+        fable_enabled=False,
+    )
+
+    assert decision.model == grok
+    assert decision.used_fable is False
+    assert decision.used_grok is True
+    assert decision.fallback is True
+
+
+def test_legacy_high_band_uses_grok_when_fable_disabled():
+    grok = ModelSelection(id="grok-4.5")
+    caps = _capabilities(fable=ModelSelection(id="claude-fable-5"), grok=grok)
+    decision = resolve_model_for_score(
+        10,
+        routing_config=None,
+        capabilities=caps,
+        default_model="composer-2.5",
+        fable_enabled=False,
+    )
+    assert decision.model == grok
+    assert decision.used_grok is True
+    assert decision.used_fable is False
     assert decision.fallback is True
 
 

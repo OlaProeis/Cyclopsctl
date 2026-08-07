@@ -538,7 +538,8 @@ def test_format_launch_overview_includes_profile_and_routing():
             "resume_available": True,
             "profile_names": ("daytime-fast", "overnight-quality"),
             "default_composer_tier": "fast",
-            "default_opus_enabled": False,
+            "default_grok_tier": "standard",
+            "default_fable_enabled": False,
             "next_task_error": None,
             "checks": [],
         },
@@ -546,7 +547,8 @@ def test_format_launch_overview_includes_profile_and_routing():
     plain = format_launch_overview_plain(status)
     assert "Profiles: daytime-fast, overnight-quality" in plain
     assert "Composer tier: fast" in plain
-    assert "Opus enabled: no" in plain
+    assert "Grok tier: standard" in plain
+    assert "Fable enabled: no" in plain
 
 
 def test_log_cycle_record_still_emits_jsonl(tmp_path: Path):

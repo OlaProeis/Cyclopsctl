@@ -12,13 +12,20 @@ from typing import Any, Literal
 
 from cursor_sdk import ModelSelection, SDKModel
 
-from cyclopsctl.models import ModelCapabilities, discover_model_capabilities
+from cyclopsctl.models import (
+    COMPOSER_COMPLEXITY_MAX,
+    FABLE_COMPLEXITY_MIN,
+    GROK_COMPLEXITY_MAX,
+    GROK_COMPLEXITY_MIN,
+    ModelCapabilities,
+    discover_model_capabilities,
+)
 
 DEFAULT_MODEL = "composer-2.5"
 
 logger = logging.getLogger(__name__)
 
-OPUS_COMPLEXITY_THRESHOLD = 9
+OPUS_COMPLEXITY_THRESHOLD = 9  # legacy alias for FABLE_COMPLEXITY_MIN
 MIN_COMPLEXITY_SCORE = 1
 MAX_COMPLEXITY_SCORE = 10
 
@@ -26,10 +33,21 @@ _OPUS_UNAVAILABLE_WARNING = (
     "Opus high-thinking preset is not available on this account; "
     "falling back to %s for high-complexity tasks"
 )
+_FABLE_UNAVAILABLE_WARNING = (
+    "Fable high-thinking preset is not available on this account; "
+    "falling back to %s for high-complexity tasks"
+)
+_GROK_UNAVAILABLE_WARNING = (
+    "Grok preset is not available on this account; "
+    "falling back to %s for mid-complexity tasks"
+)
 
 ModelAlias = Literal[
     "composer-standard",
     "composer-fast",
+    "grok-standard",
+    "grok-fast",
+    "fable-high-thinking",
     "opus-high-thinking",
 ]
 
@@ -40,6 +58,13 @@ KNOWN_MODEL_ALIASES: frozenset[str] = frozenset(
         "composer-2.5",
         "composer-fast",
         "composer-2.5-fast",
+        "grok",
+        "grok-standard",
+        "grok-4.5",
+        "grok-fast",
+        "fable",
+        "fable-high-thinking",
+        "fable-5",
         "opus",
         "opus-high-thinking",
     }
@@ -51,6 +76,13 @@ _ALIAS_TO_CANONICAL: dict[str, ModelAlias | str] = {
     "composer-2.5": "composer-standard",
     "composer-fast": "composer-fast",
     "composer-2.5-fast": "composer-fast",
+    "grok": "grok-standard",
+    "grok-standard": "grok-standard",
+    "grok-4.5": "grok-standard",
+    "grok-fast": "grok-fast",
+    "fable": "fable-high-thinking",
+    "fable-high-thinking": "fable-high-thinking",
+    "fable-5": "fable-high-thinking",
     "opus": "opus-high-thinking",
     "opus-high-thinking": "opus-high-thinking",
 }
@@ -91,12 +123,14 @@ class RoutingFallback:
 
 @dataclass(frozen=True)
 class RoutingConfig:
-    """Validated routing table and composer tier preferences."""
+    """Validated routing table and tier preferences."""
 
     rules: tuple[RoutingRule, ...] = ()
     fallback: RoutingFallback | None = None
     composer_tier: str = "standard"
+    grok_tier: str = "standard"
     opus_enabled: bool = True
+    fable_enabled: bool = True
 
     @property
     def uses_custom_rules(self) -> bool:
@@ -110,7 +144,14 @@ class RoutingDecision:
     model: ModelSelection
     complexity_score: int | None
     used_opus: bool
+    used_fable: bool = False
+    used_grok: bool = False
     fallback: bool = False
+
+    @property
+    def used_premium(self) -> bool:
+        """True when the cycle used a frontier (Fable/Opus) model."""
+        return self.used_opus or self.used_fable
 
 
 def parse_complexity_payload(data: Mapping[str, Any]) -> dict[int, int]:
@@ -166,7 +207,7 @@ def _normalize_model_reference(value: object, *, label: str) -> str:
     normalized = stripped.lower()
     if normalized in KNOWN_MODEL_ALIASES:
         return normalized
-    if normalized.startswith(("composer", "opus")):
+    if normalized.startswith(("composer", "opus", "grok", "fable")):
         raise RoutingConfigError(f"unknown model alias or id in {label}: {value!r}")
     if _EXPLICIT_MODEL_ID_PATTERN.fullmatch(stripped):
         return stripped
@@ -239,11 +280,11 @@ def _parse_routing_fallback(raw: object) -> RoutingFallback:
     return RoutingFallback(model=model, missing_score=missing_score)
 
 
-def _parse_composer_tier(raw: object | None) -> str:
+def _parse_tier(raw: object | None, *, field: str) -> str:
     if raw is None:
         return "standard"
     if not isinstance(raw, str) or not raw.strip():
-        raise RoutingConfigError("routing.composer_tier must be a non-empty string")
+        raise RoutingConfigError(f"routing.{field} must be a non-empty string")
     tier = raw.strip()
     normalized = tier.lower()
     if normalized in {"standard", "fast"}:
@@ -251,9 +292,17 @@ def _parse_composer_tier(raw: object | None) -> str:
     if _EXPLICIT_MODEL_ID_PATTERN.fullmatch(tier):
         return tier
     raise RoutingConfigError(
-        "routing.composer_tier must be 'standard', 'fast', or an explicit model id "
+        f"routing.{field} must be 'standard', 'fast', or an explicit model id "
         f"(got: {raw!r})"
     )
+
+
+def _parse_composer_tier(raw: object | None) -> str:
+    return _parse_tier(raw, field="composer_tier")
+
+
+def _parse_grok_tier(raw: object | None) -> str:
+    return _parse_tier(raw, field="grok_tier")
 
 
 def parse_routing_config(data: Mapping[str, Any]) -> RoutingConfig:
@@ -271,16 +320,23 @@ def parse_routing_config(data: Mapping[str, Any]) -> RoutingConfig:
     fallback = _parse_routing_fallback(fallback_raw) if fallback_raw is not None else None
 
     composer_tier = _parse_composer_tier(data.get("composer_tier"))
+    grok_tier = _parse_grok_tier(data.get("grok_tier"))
     opus_enabled_raw = data.get("opus_enabled", True)
     if not isinstance(opus_enabled_raw, bool):
         raise RoutingConfigError("routing.opus_enabled must be a boolean")
     opus_enabled = opus_enabled_raw
+    fable_enabled_raw = data.get("fable_enabled", True)
+    if not isinstance(fable_enabled_raw, bool):
+        raise RoutingConfigError("routing.fable_enabled must be a boolean")
+    fable_enabled = fable_enabled_raw
 
     return RoutingConfig(
         rules=rules,
         fallback=fallback,
         composer_tier=composer_tier,
+        grok_tier=grok_tier,
         opus_enabled=opus_enabled,
+        fable_enabled=fable_enabled,
     )
 
 
@@ -301,24 +357,47 @@ def resolve_model_alias(
     model_ref: str,
     *,
     capabilities: ModelCapabilities,
-) -> tuple[ModelSelection, bool]:
+    grok_tier: str = "standard",
+) -> tuple[ModelSelection, bool, bool, bool]:
     """
     Resolve a model alias or explicit id to a ``ModelSelection``.
 
-    Returns ``(selection, used_opus)``.
+    Returns ``(selection, used_opus, used_fable, used_grok)``.
     """
     canonical = _ALIAS_TO_CANONICAL.get(model_ref.lower(), model_ref)
     if canonical == "composer-standard":
-        return capabilities.composer_standard, False
+        return capabilities.composer_standard, False, False, False
     if canonical == "composer-fast":
         if capabilities.composer_fast is not None:
-            return capabilities.composer_fast, False
-        return capabilities.composer_standard, False
+            return capabilities.composer_fast, False, False, False
+        return capabilities.composer_standard, False, False, False
+    if canonical == "grok-standard":
+        # Respect run-level grok_tier when rules say "grok" / "grok-standard".
+        preferred = capabilities.grok
+        if grok_tier.lower() == "fast" and capabilities.grok_fast is not None:
+            preferred = capabilities.grok_fast
+        elif capabilities.grok_standard is not None:
+            preferred = capabilities.grok_standard
+        if preferred is not None:
+            return preferred, False, False, True
+        return capabilities.composer, False, False, False
+    if canonical == "grok-fast":
+        if capabilities.grok_fast is not None:
+            return capabilities.grok_fast, False, False, True
+        if capabilities.grok_standard is not None:
+            return capabilities.grok_standard, False, False, True
+        if capabilities.grok is not None:
+            return capabilities.grok, False, False, True
+        return capabilities.composer, False, False, False
+    if canonical == "fable-high-thinking":
+        if capabilities.fable_available and capabilities.fable is not None:
+            return capabilities.fable, False, True, False
+        return capabilities.composer, False, False, False
     if canonical == "opus-high-thinking":
         if capabilities.opus_available and capabilities.opus is not None:
-            return capabilities.opus, True
-        return capabilities.composer, False
-    return ModelSelection(id=model_ref), False
+            return capabilities.opus, True, False, False
+        return capabilities.composer, False, False, False
+    return ModelSelection(id=model_ref), False, False, False
 
 
 def resolve_model_for_score(
@@ -328,6 +407,7 @@ def resolve_model_for_score(
     capabilities: ModelCapabilities,
     default_model: str,
     opus_enabled: bool = True,
+    fable_enabled: bool = True,
 ) -> RoutingDecision:
     """Resolve a runtime model for a complexity score."""
     if routing_config is None or not routing_config.uses_custom_rules:
@@ -335,13 +415,15 @@ def resolve_model_for_score(
             score,
             capabilities=capabilities,
             default_model=default_model,
-            opus_enabled=opus_enabled,
+            fable_enabled=fable_enabled,
         )
     return _resolve_configured_score(
         score,
         routing_config=routing_config,
         capabilities=capabilities,
         default_model=default_model,
+        opus_enabled=opus_enabled,
+        fable_enabled=fable_enabled,
     )
 
 
@@ -350,25 +432,65 @@ def _resolve_legacy_score(
     *,
     capabilities: ModelCapabilities,
     default_model: str,
-    opus_enabled: bool,
+    fable_enabled: bool,
 ) -> RoutingDecision:
-    if score is None or score < OPUS_COMPLEXITY_THRESHOLD:
+    """
+    Default bands (no custom ``[[routing.rules]]``):
+
+    - 1–5 → Composer (tier from ``composer_tier``)
+    - 6–8 → Grok (tier from ``grok_tier``)
+    - 9–10 → Fable high-thinking
+    """
+    if score is None:
+        return RoutingDecision(
+            model=capabilities.composer,
+            complexity_score=None,
+            used_opus=False,
+            fallback=True,
+        )
+
+    if score <= COMPOSER_COMPLEXITY_MAX:
         return RoutingDecision(
             model=capabilities.composer,
             complexity_score=score,
             used_opus=False,
-            fallback=score is None,
         )
 
+    if GROK_COMPLEXITY_MIN <= score <= GROK_COMPLEXITY_MAX:
+        if capabilities.grok_available and capabilities.grok is not None:
+            return RoutingDecision(
+                model=capabilities.grok,
+                complexity_score=score,
+                used_opus=False,
+                used_grok=True,
+            )
+        return RoutingDecision(
+            model=capabilities.composer,
+            complexity_score=score,
+            used_opus=False,
+            fallback=True,
+        )
+
+    # 9–10 (and any score above grok band): Fable, else Grok, else default.
     if (
-        opus_enabled
-        and capabilities.opus_available
-        and capabilities.opus is not None
+        fable_enabled
+        and capabilities.fable_available
+        and capabilities.fable is not None
     ):
         return RoutingDecision(
-            model=capabilities.opus,
+            model=capabilities.fable,
             complexity_score=score,
-            used_opus=True,
+            used_opus=False,
+            used_fable=True,
+        )
+
+    if capabilities.grok_available and capabilities.grok is not None:
+        return RoutingDecision(
+            model=capabilities.grok,
+            complexity_score=score,
+            used_opus=False,
+            used_grok=True,
+            fallback=True,
         )
 
     fallback = ModelSelection.from_value(default_model)
@@ -386,6 +508,8 @@ def _resolve_configured_score(
     routing_config: RoutingConfig,
     capabilities: ModelCapabilities,
     default_model: str,
+    opus_enabled: bool = True,
+    fable_enabled: bool = True,
 ) -> RoutingDecision:
     fallback_ref = (
         routing_config.fallback.model if routing_config.fallback is not None else None
@@ -395,14 +519,21 @@ def _resolve_configured_score(
         if routing_config.fallback is not None
         else None
     )
+    grok_tier = routing_config.grok_tier
 
     if score is None:
         model_ref = missing_ref or fallback_ref or default_model
-        model, used_opus = resolve_model_alias(model_ref, capabilities=capabilities)
+        model, used_opus, used_fable, used_grok = resolve_model_alias(
+            model_ref,
+            capabilities=capabilities,
+            grok_tier=grok_tier,
+        )
         return RoutingDecision(
             model=model,
             complexity_score=None,
             used_opus=used_opus,
+            used_fable=used_fable,
+            used_grok=used_grok,
             fallback=True,
         )
 
@@ -414,11 +545,17 @@ def _resolve_configured_score(
 
     if matched_rule is None:
         model_ref = fallback_ref or default_model
-        model, used_opus = resolve_model_alias(model_ref, capabilities=capabilities)
+        model, used_opus, used_fable, used_grok = resolve_model_alias(
+            model_ref,
+            capabilities=capabilities,
+            grok_tier=grok_tier,
+        )
         return RoutingDecision(
             model=model,
             complexity_score=score,
             used_opus=used_opus,
+            used_fable=used_fable,
+            used_grok=used_grok,
             fallback=True,
         )
 
@@ -427,31 +564,54 @@ def _resolve_configured_score(
         matched_rule.model,
     )
     wants_opus = canonical == "opus-high-thinking"
-    if wants_opus and not routing_config.opus_enabled:
+    wants_fable = canonical == "fable-high-thinking"
+
+    def _premium_substitute() -> RoutingDecision:
+        """When Fable/Opus is gated or unavailable, prefer Grok then fallback."""
+        if capabilities.grok_available and capabilities.grok is not None:
+            return RoutingDecision(
+                model=capabilities.grok,
+                complexity_score=score,
+                used_opus=False,
+                used_grok=True,
+                fallback=True,
+            )
         model_ref = fallback_ref or default_model
-        model, _ = resolve_model_alias(model_ref, capabilities=capabilities)
+        model, used_opus, used_fable, used_grok = resolve_model_alias(
+            model_ref,
+            capabilities=capabilities,
+            grok_tier=grok_tier,
+        )
         return RoutingDecision(
             model=model,
             complexity_score=score,
-            used_opus=False,
+            used_opus=used_opus,
+            used_fable=used_fable,
+            used_grok=used_grok,
             fallback=True,
         )
 
-    model, used_opus = resolve_model_alias(matched_rule.model, capabilities=capabilities)
+    if wants_opus and not opus_enabled:
+        return _premium_substitute()
+    if wants_fable and not fable_enabled:
+        return _premium_substitute()
+
+    model, used_opus, used_fable, used_grok = resolve_model_alias(
+        matched_rule.model,
+        capabilities=capabilities,
+        grok_tier=grok_tier,
+    )
     if wants_opus and not used_opus:
-        model_ref = fallback_ref or default_model
-        model, _ = resolve_model_alias(model_ref, capabilities=capabilities)
-        return RoutingDecision(
-            model=model,
-            complexity_score=score,
-            used_opus=False,
-            fallback=True,
-        )
+        return _premium_substitute()
+    if wants_fable and not used_fable:
+        return _premium_substitute()
 
     return RoutingDecision(
         model=model,
         complexity_score=score,
         used_opus=used_opus,
+        used_fable=used_fable,
+        used_grok=used_grok,
         fallback=False,
     )
 
@@ -479,13 +639,20 @@ class ModelRouter:
             if routing_config is not None
             else "standard"
         )
+        grok_tier = (
+            routing_config.grok_tier if routing_config is not None else "standard"
+        )
         self._capabilities = capabilities or discover_model_capabilities(
             list_models=list_models,
             api_key=api_key,
             composer_tier=composer_tier,
+            grok_tier=grok_tier,
         )
         self._opus_warned = False
+        self._fable_warned = False
+        self._grok_warned = False
         self._opus_runtime_enabled = True
+        self._fable_runtime_enabled = True
 
     @classmethod
     def from_paths(
@@ -524,24 +691,54 @@ class ModelRouter:
         self._opus_warned = True
         logger.warning(_OPUS_UNAVAILABLE_WARNING, self._default_model)
 
+    def _warn_fable_unavailable_once(self) -> None:
+        if self._fable_warned:
+            return
+        self._fable_warned = True
+        logger.warning(_FABLE_UNAVAILABLE_WARNING, self._default_model)
+
+    def _warn_grok_unavailable_once(self) -> None:
+        if self._grok_warned:
+            return
+        self._grok_warned = True
+        logger.warning(_GROK_UNAVAILABLE_WARNING, self._default_model)
+
     def disable_opus_runtime(self) -> None:
         """Disable Opus for the remainder of this run (e.g. after billing failure)."""
         self._opus_runtime_enabled = False
+
+    def disable_fable_runtime(self) -> None:
+        """Disable Fable for the remainder of this run (e.g. after billing failure)."""
+        self._fable_runtime_enabled = False
+
+    def disable_premium_runtime(self) -> None:
+        """Disable Fable and Opus after a premium-model billing failure."""
+        self.disable_fable_runtime()
+        self.disable_opus_runtime()
 
     @property
     def opus_runtime_enabled(self) -> bool:
         return self._opus_runtime_enabled
 
+    @property
+    def fable_runtime_enabled(self) -> bool:
+        return self._fable_runtime_enabled
+
     def route(self, task_id: int) -> RoutingDecision:
         """
         Select a runtime model for a parent task id.
 
-        Uses legacy thresholds when no custom routing rules are configured;
-        otherwise applies validated routing rules and fallback settings.
+        Uses default Composer/Grok/Fable bands when no custom routing rules
+        are configured; otherwise applies validated rules and fallbacks.
         """
         score = self._report.score_for(task_id)
         config_opus_enabled = (
             self._routing_config.opus_enabled
+            if self._routing_config is not None
+            else True
+        )
+        config_fable_enabled = (
+            self._routing_config.fable_enabled
             if self._routing_config is not None
             else True
         )
@@ -551,18 +748,30 @@ class ModelRouter:
             capabilities=self._capabilities,
             default_model=self._default_model,
             opus_enabled=config_opus_enabled and self._opus_runtime_enabled,
+            fable_enabled=config_fable_enabled and self._fable_runtime_enabled,
         )
 
         if (
             decision.fallback
             and decision.complexity_score is not None
-            and decision.complexity_score >= OPUS_COMPLEXITY_THRESHOLD
-            and not decision.used_opus
             and (
                 self._routing_config is None
                 or not self._routing_config.uses_custom_rules
             )
         ):
-            self._warn_opus_unavailable_once()
+            if (
+                GROK_COMPLEXITY_MIN
+                <= decision.complexity_score
+                <= GROK_COMPLEXITY_MAX
+                and not decision.used_grok
+            ):
+                self._warn_grok_unavailable_once()
+            elif (
+                decision.complexity_score >= FABLE_COMPLEXITY_MIN
+                and not decision.used_fable
+                and not decision.used_opus
+                and not decision.used_grok
+            ):
+                self._warn_fable_unavailable_once()
 
         return decision

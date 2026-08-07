@@ -19,19 +19,21 @@ CLI keys that override file settings: `parse_model`, `analyze_model`, `max_tasks
 
 ## Bootstrap presets (`tasks/bootstrap_model.py`)
 
-Init and parse/analyze use the same preset for both steps. Interactive init shows six choices:
+Init and parse/analyze use the same preset for both steps. Interactive init shows eight choices:
 
 | Preset | When to use |
 |--------|-------------|
 | `auto` | Default — Sonnet first, Composer fallback on failure |
 | `composer` | Simple PRDs; included with Cursor (no extra API credits) |
 | `sonnet` | Strong JSON/decomposition; good quality/cost balance |
+| `grok` | Grok 4.5 standard (not-fast); strong agentic parse/analyze at good cost/speed |
+| `fable-high-thinking` | Fable 5 high-thinking for strong decomposition |
 | `opus-high-thinking` | Large technical PRDs needing deep decomposition |
 | `sonnet-max` | Very long PRDs; uses `context=1m` / `max=true` variant params when listed |
 | `opus-max` | Most complex PRDs; extended context + high thinking variant params when listed |
 
 Premium presets fall back through weaker tiers to Composer on credit or runtime errors.
-CLI: `cyclopsctl init --bootstrap-model opus-high-thinking|sonnet-max|opus-max`.
+CLI: `cyclopsctl init --bootstrap-model grok|fable-high-thinking|opus-high-thinking|sonnet-max|opus-max`.
 
 ## Model resolution (`tasks/models.py`)
 

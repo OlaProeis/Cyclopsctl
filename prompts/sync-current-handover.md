@@ -33,7 +33,7 @@ Write the **complete** `current-handover-prompt.md` with this **exact section or
 6. `## Current Task: <id> — <title>`
 7. Task Details table, Description, Implementation Details, Test Strategy — **from `cyclopsctl tasks show` only**
 8. `## Verification` (build/test command from PRD / ai-context)
-9. `## Model Selection` (informational; 1–8 Composer 2.5, 9–10 Opus high-thinking; cyclopsctl selects runtime model)
+9. `## Model Selection` (informational; 1–5 Composer, 6–8 Grok, 9–10 Fable high-thinking; cyclopsctl selects runtime model)
 
 Remove any `## Status: Task queue not loaded` section from the previous placeholder.
 

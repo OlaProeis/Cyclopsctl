@@ -17,6 +17,7 @@ from cyclopsctl.models import (
     ModelListingError,
     detect_composer,
     detect_fable_high_thinking,
+    detect_grok,
     detect_opus_high_thinking,
     detect_opus_max,
     detect_sonnet_max,
@@ -42,7 +43,7 @@ def _opus_models() -> list[SDKModel]:
     ]
 
 
-def test_detect_fable_high_thinking_prefers_high_variant():
+def test_detect_fable_high_thinking_prefers_thinking_high_non_max():
     models = [
         SDKModel(
             id="claude-fable-5",
@@ -50,48 +51,62 @@ def test_detect_fable_high_thinking_prefers_high_variant():
             variants=(
                 ModelVariant(
                     display_name="Default",
-                    params=(),
+                    params=(
+                        ModelParameterValue(id="thinking", value="false"),
+                        ModelParameterValue(id="context", value="300k"),
+                        ModelParameterValue(id="effort", value="medium"),
+                    ),
                     is_default=True,
                 ),
                 ModelVariant(
-                    display_name="High thinking",
-                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                    display_name="Max high",
+                    params=(
+                        ModelParameterValue(id="thinking", value="true"),
+                        ModelParameterValue(id="context", value="1m"),
+                        ModelParameterValue(id="effort", value="high"),
+                    ),
                 ),
-            ),
-        ),
-        SDKModel(
-            id="claude-fable-5-thinking-high",
-            display_name="Fable 5 High Thinking",
-            variants=(
                 ModelVariant(
                     display_name="High thinking",
-                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                    params=(
+                        ModelParameterValue(id="thinking", value="true"),
+                        ModelParameterValue(id="context", value="300k"),
+                        ModelParameterValue(id="effort", value="high"),
+                    ),
                 ),
             ),
         ),
     ]
     selection = detect_fable_high_thinking(models)
     assert selection is not None
-    assert selection.id == "claude-fable-5-thinking-high"
+    assert selection.id == "claude-fable-5"
+    params = {(p.id, p.value) for p in selection.params}
+    assert ("thinking", "true") in params
+    assert ("effort", "high") in params
+    assert ("context", "300k") in params
 
 
 def test_detect_fable_excludes_max_mode():
     models = [
         SDKModel(id="claude-fable-5-max", display_name="Fable 5 Max"),
         SDKModel(
-            id="claude-fable-5-thinking-high",
-            display_name="Fable 5 High Thinking",
+            id="claude-fable-5",
+            display_name="Fable 5",
             variants=(
                 ModelVariant(
                     display_name="High",
-                    params=(ModelParameterValue(id="reasoning", value="high"),),
+                    params=(
+                        ModelParameterValue(id="thinking", value="true"),
+                        ModelParameterValue(id="context", value="300k"),
+                        ModelParameterValue(id="effort", value="high"),
+                    ),
                 ),
             ),
         ),
     ]
     selection = detect_fable_high_thinking(models)
     assert selection is not None
-    assert selection.id == "claude-fable-5-thinking-high"
+    assert selection.id == "claude-fable-5"
 
 
 def test_detect_opus_prefers_high_thinking_over_fast():
@@ -318,7 +333,7 @@ def test_fetch_model_inventory_raises_on_cursor_error():
         fetch_model_inventory(list_models=failing_list)
 
 
-def test_format_models_diagnostic_lists_inventory_and_opus_route():
+def test_format_models_diagnostic_lists_inventory_and_routes():
     inventory = fetch_model_inventory(list_models=lambda **_kw: _opus_models())
     report = format_models_diagnostic(inventory)
 
@@ -326,24 +341,61 @@ def test_format_models_diagnostic_lists_inventory_and_opus_route():
     assert "composer-2.5" in report
     assert "claude-opus-4-8-thinking-high" in report
     assert "reasoning=high" in report
-    assert "Composer (complexity 1-8):" in report
-    assert "Opus high-thinking (complexity 9-10):" in report
+    assert "Composer (complexity 1-5):" in report
+    assert "Grok (complexity 6-8):" in report
+    assert "Fable high-thinking (complexity 9-10):" in report
     assert "Opus route available: yes" in report
 
-    composer_pos = report.index("Composer (complexity 1-8):")
-    opus_pos = report.index("Opus high-thinking (complexity 9-10):")
+    composer_pos = report.index("Composer (complexity 1-5):")
+    grok_pos = report.index("Grok (complexity 6-8):")
     inventory_pos = report.index("Model ID")
-    assert inventory_pos < composer_pos < opus_pos
+    assert inventory_pos < composer_pos < grok_pos
 
 
-def test_format_models_diagnostic_shows_fallback_when_opus_missing():
+def test_format_models_diagnostic_shows_fallback_when_frontier_missing():
     models = [SDKModel(id="composer-2.5", display_name="Composer 2.5")]
     inventory = fetch_model_inventory(list_models=lambda **_kw: models)
     report = format_models_diagnostic(inventory)
 
-    assert "Opus route available: no" in report
+    assert "Grok route available: no" in report
+    assert "Fable route available: no" in report
     assert "Fallback for complexity 9-10:" in report
     assert "composer-2.5" in report
+
+
+def test_detect_grok_prefers_standard_high_effort_not_fast():
+    models = [
+        SDKModel(
+            id="grok-4.5",
+            display_name="Cursor Grok 4.5",
+            variants=(
+                ModelVariant(
+                    display_name="Fast high",
+                    params=(
+                        ModelParameterValue(id="effort", value="high"),
+                        ModelParameterValue(id="fast", value="true"),
+                    ),
+                    is_default=True,
+                ),
+                ModelVariant(
+                    display_name="Standard high",
+                    params=(
+                        ModelParameterValue(id="effort", value="high"),
+                        ModelParameterValue(id="fast", value="false"),
+                    ),
+                ),
+            ),
+        ),
+    ]
+    selection = detect_grok(models, grok_tier="standard")
+    assert selection is not None
+    assert selection.id == "grok-4.5"
+    assert ("fast", "false") in {(p.id, p.value) for p in selection.params}
+    assert ("effort", "high") in {(p.id, p.value) for p in selection.params}
+
+    fast = detect_grok(models, grok_tier="fast")
+    assert fast is not None
+    assert ("fast", "true") in {(p.id, p.value) for p in fast.params}
 
 
 def test_discover_model_capabilities_graceful_when_preset_names_differ():

@@ -111,7 +111,7 @@ Lightweight CLI that sequences Cursor agent runs: **implement** (new agent per c
 
 **Handover convention:** `current-handover-prompt.md` must include `# Task ID: <n>` (integer id only). One cyclopsctl cycle = one task; tasks are flat (no subtask hierarchy).
 
-**Model routing (cyclopsctl):** Reads `.cyclopsctl/reports/complexity-report.json`. Default (no `[routing]` rules): scores 1–8 → standard Composer; 9–10 → Opus 4.8 high-thinking (not Max). Optional `[routing]` in `cyclopsctl.toml` sets score bands, `composer_tier` (standard/fast), `opus_enabled`, and fallbacks. The **Model Selection** section in the handover is informational for agents.
+**Model routing (cyclopsctl):** Reads `.cyclopsctl/reports/complexity-report.json`. Default (no `[routing]` rules): scores 1–5 → Composer; 6–8 → Grok; 9–10 → Fable high-thinking. Optional `[routing]` in `cyclopsctl.toml` sets score bands, `composer_tier` / `grok_tier` (standard/fast), `fable_enabled`, `opus_enabled`, and fallbacks. Launch prompts for Composer/Grok tiers and Fable enablement. The **Model Selection** section in the handover is informational for agents.
 
 ## Conventions
 - **Modularity:** One feature per file; thin CLI, logic in modules.
