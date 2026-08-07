@@ -14,9 +14,23 @@ from cyclopsctl.tasks.types import NextTaskLookup
 
 GetNextTaskFn = Callable[..., NextTaskLookup]
 
+# Whole-project ai-context.md integrity (post-update).
+AI_CONTEXT_PROTECTED_MARKERS: tuple[str, ...] = (
+    "Rules (DO NOT UPDATE)",
+    "Implementation Phase Rules",
+    "Update Phase Rules",
+)
+AI_CONTEXT_SOFT_MAX_LINES = 1000
+AI_CONTEXT_SHRINK_MIN_PRIOR_LINES = 80
+AI_CONTEXT_SHRINK_RATIO = 0.40
+
 
 class HandoverVerificationError(RuntimeError):
     """Handover file did not advance meaningfully after the update phase."""
+
+
+class AiContextVerificationError(RuntimeError):
+    """ai-context.md lost protected sections or was destructively rewritten."""
 
 
 class ImplementationHandoverViolationError(RuntimeError):
@@ -158,6 +172,128 @@ def _secondary_next_suggests_different_task(
         return True
 
     return next_task.numeric_id != before.task_id
+
+
+@dataclass(frozen=True)
+class AiContextSnapshot:
+    """Pre/post update state for ``ai-context.md`` integrity checks."""
+
+    path: Path
+    missing: bool
+    raw: str
+    line_count: int
+    captured_at: datetime
+
+
+@dataclass(frozen=True)
+class AiContextVerifyResult:
+    """Outcome of post-update ai-context checks (warnings only; failures raise)."""
+
+    warnings: tuple[str, ...] = ()
+
+
+def capture_ai_context_snapshot(
+    path: Path,
+    *,
+    allow_missing: bool = True,
+) -> AiContextSnapshot:
+    """Read ai-context content and line count before the update phase."""
+    captured_at = datetime.now(timezone.utc)
+    if not path.is_file():
+        if allow_missing:
+            return AiContextSnapshot(
+                path=path,
+                missing=True,
+                raw="",
+                line_count=0,
+                captured_at=captured_at,
+            )
+        raise AiContextVerificationError(f"ai-context not found (required): {path}")
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise AiContextVerificationError(
+            f"ai-context missing or unreadable: {path}"
+        ) from exc
+    return AiContextSnapshot(
+        path=path,
+        missing=False,
+        raw=raw,
+        line_count=_ai_context_line_count(raw),
+        captured_at=captured_at,
+    )
+
+
+def _ai_context_line_count(raw: str) -> int:
+    if not raw:
+        return 0
+    return len(raw.splitlines())
+
+
+def _missing_protected_markers(raw: str) -> list[str]:
+    return [marker for marker in AI_CONTEXT_PROTECTED_MARKERS if marker not in raw]
+
+
+def verify_ai_context_after_update(
+    before: AiContextSnapshot,
+    *,
+    require_ai_context: bool = False,
+) -> AiContextVerifyResult:
+    """
+    Fail when update-phase edits gut whole-project ai-context memory.
+
+    Raises ``AiContextVerificationError`` when the file disappears (if it
+    existed before or is required), protected rule sections are missing, or
+    the file shrinks by ≥40% from a substantial prior size (≥80 lines).
+
+    Returns soft warnings (e.g. over ~1000 lines) without failing.
+    """
+    path = before.path
+    warnings: list[str] = []
+
+    if not path.is_file():
+        if before.missing and not require_ai_context:
+            return AiContextVerifyResult()
+        raise AiContextVerificationError(
+            f"ai-context missing or unreadable after update: {path}"
+        )
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise AiContextVerificationError(
+            f"ai-context missing or unreadable after update: {path}"
+        ) from exc
+
+    after_lines = _ai_context_line_count(raw)
+    missing = _missing_protected_markers(raw)
+    if missing:
+        raise AiContextVerificationError(
+            "ai-context lost protected section(s) after update: "
+            + ", ".join(missing)
+            + f" ({path})"
+        )
+
+    if (
+        not before.missing
+        and before.line_count >= AI_CONTEXT_SHRINK_MIN_PRIOR_LINES
+        and after_lines < before.line_count * (1.0 - AI_CONTEXT_SHRINK_RATIO)
+    ):
+        raise AiContextVerificationError(
+            "ai-context shrank destructively after update "
+            f"(before={before.line_count} lines, after={after_lines} lines, "
+            f"path={path}). Whole-project memory must not be rewritten for "
+            "the current phase alone."
+        )
+
+    if after_lines > AI_CONTEXT_SOFT_MAX_LINES:
+        warnings.append(
+            f"ai-context exceeds soft max of {AI_CONTEXT_SOFT_MAX_LINES} lines "
+            f"(now {after_lines}): prune duplicates/redundant bullets, keep "
+            f"durable whole-project facts ({path})"
+        )
+
+    return AiContextVerifyResult(warnings=tuple(warnings))
 
 
 def verify_handover_advanced(

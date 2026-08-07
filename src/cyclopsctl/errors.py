@@ -13,12 +13,17 @@ from cyclopsctl.session import SessionError
 from cyclopsctl.task_selection import TaskSelectionError
 from cyclopsctl.tasks.cli import TasksCliError
 from cyclopsctl.alignment import HandoverAlignmentError
-from cyclopsctl.verify import HandoverVerificationError, ImplementationHandoverViolationError
+from cyclopsctl.verify import (
+    AiContextVerificationError,
+    HandoverVerificationError,
+    ImplementationHandoverViolationError,
+)
 
 GENERAL_EXIT_CODE = RUN_FAILURE_EXIT_CODE
 
 KNOWN_RUN_ERRORS = (
     AgentRunError,
+    AiContextVerificationError,
     BootstrapError,
     ConfigError,
     HandoverAlignmentError,

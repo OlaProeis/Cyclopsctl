@@ -12,9 +12,13 @@ This prompt runs only in the **update phase** (same agent session after implemen
 cyclopsctl tasks set-status --id=<current-task-id> --status=done --project-root <project-root>
 ```
 
-## 2. Documentation
+## 2. Documentation and project memory
 
-Create feature-based documentation for what was implemented and update `docs/index.md`.
+Create feature-based documentation for what was implemented, update `docs/index.md`, then update `ai-context.md` as **whole-project** memory (all phases/tags):
+
+- Never rewrite `ai-context.md` from scratch or clear prior-phase facts unless obsolete/wrong.
+- Add 1–3 durable bullets; prune duplicates only; soft target ≤ ~1000 lines.
+- Never edit Rules (DO NOT UPDATE), Implementation Phase Rules, Update Phase Rules, or Handover Files rules.
 
 ## 3. Get next task
 
@@ -35,5 +39,6 @@ This is the **only** step that may edit `current-handover-prompt.md`. Preserve t
 
 - [ ] `cyclopsctl tasks set-status` succeeded
 - [ ] `docs/index.md` updated
+- [ ] `ai-context.md` updated with project memory (or explicit “no new memory” line with reason)
 - [ ] `current-handover-prompt.md` rewritten with a new `# Task ID:`
 - [ ] Project tests pass

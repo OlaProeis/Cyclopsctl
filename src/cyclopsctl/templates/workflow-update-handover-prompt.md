@@ -27,11 +27,13 @@ Create feature-based documentation for what was implemented, then update project
 1. Group by **feature**, not task number.
 2. Add a doc under `docs/` or `docs/technical/`.
 3. **Update `docs/index.md`** with the new entry and a one-line description.
-4. **Update `ai-context.md`** — key facts the next implementation agent must know (not a changelog):
+4. **Update `ai-context.md`** — whole-project memory for **all phases/tags**, not this phase alone (not a changelog):
    - **Editable sections:** Architecture & Data Model, Conventions, Where Things Live; add `## Project Memory` if missing.
    - **Never edit:** Rules (DO NOT UPDATE), Implementation Phase Rules, Update Phase Rules, or Handover Files rules.
+   - **Never rewrite from scratch** and **never clear prior-phase facts** unless they are obsolete or wrong.
    - Add **1–3 bullets max** for durable facts from this task (new modules, patterns, gotchas, how things connect).
-   - Merge or prune duplicates; point to `docs/` for long detail — do not copy full doc text here.
+   - Merge or prune **duplicates only**; point to `docs/` for long detail — do not copy full doc text here.
+   - Keep the file lean (soft target **≤ ~1000 lines**); drop redundant bullets, not useful history.
    - If nothing new worth remembering: add one line under Project Memory, e.g. `Task <id>: no new project memory — <brief reason>`.
 
 **Naming:** Good: `feature-name.md`. Bad: `task-1.md`.

@@ -10,12 +10,32 @@ from cyclopsctl.prompt import HandoverSnapshot, snapshot_handover
 from cyclopsctl.tasks.types import NextTaskLookup, NextTaskResult
 from cyclopsctl.task_selection import TaskSelectionError
 from cyclopsctl.verify import (
+    AI_CONTEXT_SOFT_MAX_LINES,
+    AiContextVerificationError,
     HandoverVerificationError,
     TimedHandoverSnapshot,
+    capture_ai_context_snapshot,
     capture_pre_update_snapshot,
     read_post_update_snapshot,
+    verify_ai_context_after_update,
     verify_handover_advanced,
 )
+
+_MINIMAL_AI_CONTEXT = """\
+# Project - AI Context
+
+## Rules (DO NOT UPDATE)
+- Stay focused.
+
+## Implementation Phase Rules
+- Implement only.
+
+## Update Phase Rules
+- Update memory only.
+
+## Project Memory
+- Important fact from phase 1
+"""
 
 
 def _snap(
@@ -270,4 +290,109 @@ def test_guard_restores_update_template_when_impl_modified(tmp_path: Path):
     assert result.update_handover_modified is True
     assert result.update_handover_restored is True
     assert snapshot_handover(update).content_hash == update_at_start.snapshot.content_hash
+
+
+def test_capture_ai_context_snapshot_reads_lines(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    path.write_text(_MINIMAL_AI_CONTEXT, encoding="utf-8")
+
+    snap = capture_ai_context_snapshot(path)
+
+    assert snap.missing is False
+    assert snap.line_count == len(_MINIMAL_AI_CONTEXT.splitlines())
+    assert "Project Memory" in snap.raw
+
+
+def test_capture_ai_context_snapshot_allow_missing(tmp_path: Path):
+    path = tmp_path / "missing-ai-context.md"
+    snap = capture_ai_context_snapshot(path, allow_missing=True)
+    assert snap.missing is True
+    assert snap.line_count == 0
+
+
+def test_verify_ai_context_additive_update_passes(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    path.write_text(_MINIMAL_AI_CONTEXT, encoding="utf-8")
+    before = capture_ai_context_snapshot(path)
+    path.write_text(
+        _MINIMAL_AI_CONTEXT + "- New durable fact from this task\n",
+        encoding="utf-8",
+    )
+
+    result = verify_ai_context_after_update(before)
+
+    assert result.warnings == ()
+
+
+def test_verify_ai_context_fails_when_protected_section_removed(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    path.write_text(_MINIMAL_AI_CONTEXT, encoding="utf-8")
+    before = capture_ai_context_snapshot(path)
+    path.write_text(
+        "# Project - AI Context\n\n## Rules (DO NOT UPDATE)\n- Stay focused.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AiContextVerificationError, match="protected section"):
+        verify_ai_context_after_update(before)
+
+
+def test_verify_ai_context_fails_on_destructive_shrink(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    lines = [
+        "# Project - AI Context",
+        "",
+        "## Rules (DO NOT UPDATE)",
+        "- Stay focused.",
+        "",
+        "## Implementation Phase Rules",
+        "- Implement only.",
+        "",
+        "## Update Phase Rules",
+        "- Update memory only.",
+        "",
+        "## Project Memory",
+    ]
+    lines.extend(f"- Durable fact {i}" for i in range(90))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    before = capture_ai_context_snapshot(path)
+    assert before.line_count >= 80
+
+    # Keep protected markers but wipe Project Memory (phase-style rewrite).
+    path.write_text(
+        "\n".join(lines[:12]) + "\n- Only current phase\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AiContextVerificationError, match="shrank destructively"):
+        verify_ai_context_after_update(before)
+
+
+def test_verify_ai_context_fails_when_file_deleted(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    path.write_text(_MINIMAL_AI_CONTEXT, encoding="utf-8")
+    before = capture_ai_context_snapshot(path)
+    path.unlink()
+
+    with pytest.raises(AiContextVerificationError, match="missing or unreadable"):
+        verify_ai_context_after_update(before)
+
+
+def test_verify_ai_context_warns_when_over_soft_max(tmp_path: Path):
+    path = tmp_path / "ai-context.md"
+    header = (
+        "# Project - AI Context\n\n"
+        "## Rules (DO NOT UPDATE)\n- Stay focused.\n\n"
+        "## Implementation Phase Rules\n- Implement only.\n\n"
+        "## Update Phase Rules\n- Update memory only.\n\n"
+        "## Project Memory\n"
+    )
+    pad = "\n".join(f"- pad {i}" for i in range(AI_CONTEXT_SOFT_MAX_LINES))
+    path.write_text(header + pad + "\n", encoding="utf-8")
+    before = capture_ai_context_snapshot(path)
+
+    result = verify_ai_context_after_update(before)
+
+    assert len(result.warnings) == 1
+    assert "soft max" in result.warnings[0]
 

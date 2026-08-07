@@ -61,9 +61,11 @@ from cyclopsctl.state import RunStateStatus, RunStateTracker
 from cyclopsctl.git_summary import capture_cycle_git_diff_summary, capture_git_head
 from cyclopsctl.transcript_export import write_transcript_sidecar
 from cyclopsctl.verify import (
+    capture_ai_context_snapshot,
     capture_pre_update_snapshot,
     guard_handover_files_after_implementation,
     read_post_update_snapshot,
+    verify_ai_context_after_update,
     verify_handover_advanced,
 )
 
@@ -594,6 +596,10 @@ def _run_single_cycle(
             config.current_handover,
             allow_missing=handover_relaxed,
         )
+        pre_ai_context = capture_ai_context_snapshot(
+            config.ai_context,
+            allow_missing=not config.require_ai_context,
+        )
         log.log_handover_snapshot(
             cycle_number=cycle_number,
             total_cycles=config.cycles,
@@ -679,6 +685,16 @@ def _run_single_cycle(
             tag=config.tag,
             get_next_task_fn=raw_get_next_task,
         )
+        ai_context_result = verify_ai_context_after_update(
+            pre_ai_context,
+            require_ai_context=config.require_ai_context,
+        )
+        for warning in ai_context_result.warnings:
+            log.log_warning(
+                warning,
+                cycle_number=cycle_number,
+                ai_context_path=config.ai_context,
+            )
         log.log_verification_result(
             cycle_number=cycle_number,
             total_cycles=config.cycles,

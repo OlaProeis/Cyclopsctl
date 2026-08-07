@@ -35,7 +35,7 @@ When a changed PRD is detected on a mature project:
 3. `NativeTaskBackend.use_tag`
 4. Parse PRD via Cursor SDK for the new tag
 5. Analyze complexity for the new tag (**always** re-runs; `skip_if_exists=False` so a prior-phase `complexity-report.json` does not block scoring)
-6. Refresh workflow files from PRD (`force_workflow=True`)
+6. Refresh workflow files from PRD **non-destructively** (`force_workflow=False`) — missing or generic-stub files regenerate; customized `ai-context.md` / `update-handover-prompt.md` / `docs/index.md` are preserved so whole-project memory survives across phases
 7. Sync `current-handover-prompt.md` for the first pending task
 8. Update `.cyclopsctl/last-parsed-prd.json`
 

@@ -1,5 +1,7 @@
 # Python API Service - AI Context
 
+This file is **whole-project** agent memory across all phases and task tags. It is not phase-scoped. Update it additively; never rewrite it for the current phase alone.
+
 ## Rules (DO NOT UPDATE)
 - **Implementation sessions:** follow **Implementation Phase Rules** below only.
 - **Update sessions:** follow **Update Phase Rules** below only when you receive the update handover prompt.
@@ -28,10 +30,11 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 - **DO:** Follow every step in `update-handover-prompt.md`.
 - **DO:** Use `cyclopsctl tasks list pending --project-root {ROOT}` and pick the **lowest numeric parent id** for the next handover — not `cyclopsctl tasks next` (priority can skip ahead).
 - **DO:** Rewrite `current-handover-prompt.md` for the **next** task (this is the only time that file may change).
-- **DO:** Update `ai-context.md` project memory per update handover step 2 (key facts only, not a changelog).
+- **DO:** Update `ai-context.md` as **additive whole-project memory** per update handover step 2 (key facts only, not a changelog; never clear prior-phase facts unless obsolete/wrong).
 - **DO:** Use `cyclopsctl tasks` with `--project-root {ROOT}` for all task commands (see Environment in the handover).
 - **DO:** Document by feature (e.g., `auth-layer.md`), not by task number; update `docs/index.md` when adding documentation.
 - **DO NOT:** Re-implement or extend the task you just finished unless tests are broken.
+- **DO NOT:** Rewrite `ai-context.md` from scratch or treat it as phase-only context.
 
 ## Conventions
 - **Documentation:** Feature-based names in `docs/` (e.g., `auth-layer.md`), not `task-1.md`. Update `docs/index.md` in the update phase only.
@@ -42,7 +45,7 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 |------|----------------|------|
 | `current-handover-prompt.md` | Update-phase agent only | After implementation |
 | `update-handover-prompt.md` | Human / template only | Never edited by agents |
-| `ai-context.md` | Update-phase agent only | Every update phase — project memory bullets (see update handover step 2) |
+| `ai-context.md` | Update-phase agent only | Every update phase — additive whole-project memory (see update handover step 2) |
 
 ## Tech Stack
 Python 3.11+, FastAPI, PostgreSQL

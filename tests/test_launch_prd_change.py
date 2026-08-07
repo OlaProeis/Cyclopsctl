@@ -266,6 +266,47 @@ def test_changed_prd_runs_tag_pipeline_in_order(
     assert prd_hash_changed(root, root / "prd.md") is False
 
 
+def test_changed_prd_preserves_customized_ai_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "repo"
+    _write_initialized_project(root)
+    custom_ai = (
+        "# Custom Project - AI Context\n\n"
+        "## Rules (DO NOT UPDATE)\n"
+        "- Keep going.\n\n"
+        "## Implementation Phase Rules\n"
+        "- Implement only.\n\n"
+        "## Update Phase Rules\n"
+        "- Update memory only.\n\n"
+        "## Project Memory\n"
+        "- Phase 1 fact: auth lives in src/auth.py\n"
+        "- Phase 4 fact: routing uses ModelRouter\n"
+    )
+    (root / "ai-context.md").write_text(custom_ai, encoding="utf-8")
+    (root / "prd.md").write_text("# PRD: Phase 5\n\nUpdated scope.\n", encoding="utf-8")
+    _mock_native_prd_change(monkeypatch)
+    config_paths = _launch_config(root)
+
+    result = handle_launch_prd_change(
+        root,
+        current_handover=config_paths.current_handover,
+        complexity_report=config_paths.complexity_report,
+        ai_context=config_paths.ai_context,
+        assume_yes=True,
+        task_backend="native",
+    )
+
+    assert result is not None
+    assert result.active_tag == "phase-5"
+    assert (root / "ai-context.md").read_text(encoding="utf-8") == custom_ai
+    assert "Phase 1 fact: auth lives in src/auth.py" in custom_ai
+    assert "Phase 4 fact: routing uses ModelRouter" in (
+        root / "ai-context.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_changed_prd_passes_bootstrap_model_to_parse_and_analyze(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

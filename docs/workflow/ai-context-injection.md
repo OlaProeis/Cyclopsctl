@@ -2,6 +2,8 @@
 
 The cyclopsctl prepends `ai-context.md` to **implementation** prompts only. Handover files stay unchanged; injection is cyclopsctl-side only. The **update** phase sends `update-handover-prompt.md` without re-attaching ai-context (same agent session already has it).
 
+`ai-context.md` is **whole-project** memory across phases and task tags — not phase-scoped. New-phase PRD change preserves a customized file (workflow generation uses `force_workflow=False`). Update-phase agents must update it additively (see `update-handover-prompt.md` step 2).
+
 ## Prompt shape
 
 **Implementation** (`compose_agent_prompt(..., attach_ai_context=True)`):
@@ -50,8 +52,21 @@ When the file is missing and not required, the handover body is sent unchanged. 
 
 On successful attachment, logs path, content hash prefix (12 chars), and whether truncation occurred — not full file content.
 
+## Post-update integrity checks
+
+After handover verification each cycle, `verify_ai_context_after_update()` (`src/cyclopsctl/verify.py`) snapshots `ai-context.md` before the update phase and checks the result:
+
+| Condition | Outcome |
+|-----------|---------|
+| File missing after update (existed before, or `--require-ai-context`) | Fail (`AiContextVerificationError`) |
+| Protected sections missing (`Rules (DO NOT UPDATE)`, `Implementation Phase Rules`, `Update Phase Rules`) | Fail |
+| Destructive shrink (≥40% fewer lines when prior size ≥80 lines) | Fail |
+| Soft max exceeded (~1000 lines) | Warn only |
+
 ## Errors
 
 `PromptComposeError` — required ai-context missing at compose time (normally caught at config when `--require-ai-context`).
 
-Tests: `tests/test_prompt.py` (composition), `tests/test_loop.py` (integration), `tests/test_config.py` (config keys).
+`AiContextVerificationError` — post-update integrity failure (see above).
+
+Tests: `tests/test_prompt.py` (composition), `tests/test_loop.py` (integration), `tests/test_config.py` (config keys), `tests/test_verify.py` (integrity checks).

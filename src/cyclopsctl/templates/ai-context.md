@@ -1,5 +1,7 @@
 # AI Context
 
+This file is **whole-project** agent memory across all phases and task tags. It is not phase-scoped. Update it additively; never rewrite it for the current phase alone.
+
 ## Rules (DO NOT UPDATE)
 - **Implementation sessions:** follow **Implementation Phase Rules** below only.
 - **Update sessions:** follow **Update Phase Rules** below only when you receive the update handover prompt.
@@ -16,6 +18,7 @@
 ## Update Phase Rules
 - Follow every step in `update-handover-prompt.md` after implementation.
 - Rewrite `current-handover-prompt.md` for the next task only in the update phase.
+- Update `ai-context.md` as **additive whole-project memory** (never clear prior-phase facts unless obsolete/wrong; soft target ≤ ~1000 lines).
 - Use `cyclopsctl tasks list` (all tasks table), `list pending`, `show`, and `set-status` with `--project-root` from the handover Environment section.
 - Document by feature (e.g., `auth-layer.md`), not by task number; update `docs/index.md` when adding documentation.
 
@@ -28,7 +31,7 @@
 |------|----------------|------|
 | `current-handover-prompt.md` | Update-phase agent only | After implementation |
 | `update-handover-prompt.md` | Human / template only | Never edited by agents |
-| `ai-context.md` | Update-phase agent only | Every update phase — project memory bullets (see update handover step 2) |
+| `ai-context.md` | Update-phase agent only | Every update phase — additive whole-project memory (see update handover step 2) |
 
 ## Where Things Live
 | Want to... | Look in... |

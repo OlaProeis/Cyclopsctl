@@ -907,11 +907,13 @@ def handle_launch_prd_change(
         )
         steps.append("analyze-complexity")
 
+        # Preserve customized ai-context.md / update-handover across phases.
+        # Only missing or generic-stub workflow files are regenerated.
         workflow_result = generate_workflow_files(
             WorkflowGenConfig(
                 project_root=root,
                 prd_path=resolved_prd,
-                force_workflow=True,
+                force_workflow=False,
             )
         )
         if workflow_result.generated_paths:

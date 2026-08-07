@@ -1,5 +1,7 @@
 # Cyclopsctl - AI Context
 
+This file is **whole-project** agent memory across all phases and task tags. It is not phase-scoped. Update it additively; never rewrite it for the current phase alone.
+
 ## Rules (DO NOT UPDATE)
 - **Implementation sessions:** follow **Implementation Phase Rules** below only. Do not apply update-phase work.
 - **Update sessions:** follow **Update Phase Rules** below only when you receive the update handover prompt.
@@ -49,7 +51,8 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 - **DO:** Follow every step in `update-handover-prompt.md`.
 - **DO:** Use `cyclopsctl tasks list pending` and pick the **lowest numeric parent id** for the next handover — not `cyclopsctl tasks next` (priority can skip ahead).
 - **DO:** Rewrite `current-handover-prompt.md` for the **next** task (this is the only time that file may change).
-- **DO:** Update `ai-context.md` project memory per `update-handover-prompt.md` step 2 (key facts only, not a changelog).
+- **DO:** Update `ai-context.md` as **additive whole-project memory** per `update-handover-prompt.md` step 2 (key facts only, not a changelog; never clear prior-phase facts unless obsolete/wrong; soft target ≤ ~1000 lines).
+- **DO NOT:** Rewrite `ai-context.md` from scratch or treat it as phase-only context.
 - **DO NOT:** Re-implement or extend the task you just finished unless tests are broken.
 
 ## Handover Files
@@ -57,7 +60,7 @@ When `update-handover-prompt.md` is provided (after implementation in the same a
 |------|----------------|------|
 | `current-handover-prompt.md` | Update-phase agent only | After implementation, when `update-handover-prompt.md` is sent |
 | `update-handover-prompt.md` | Human / template only | Never edited by agents |
-| `ai-context.md` | Update-phase agent only | Every update phase — project memory bullets (see `update-handover-prompt.md` step 2) |
+| `ai-context.md` | Update-phase agent only | Every update phase — additive whole-project memory (see `update-handover-prompt.md` step 2) |
 
 The cyclopsctl **snapshots** `current-handover-prompt.md` before the update phase and **fails the run** if `# Task ID:` and content are unchanged afterward.
 
