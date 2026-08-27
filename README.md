@@ -50,8 +50,10 @@ Requires **Python 3.10+** and a `CURSOR_API_KEY`.
 **From GitHub (no clone needed):**
 
 ```bash
-pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git"
+pip install "cyclopsctl @ git+https://github.com/OlaProeis/Cyclopsctl.git@v0.1.8"
 ```
+
+To track `master` instead of a release tag, omit `@v0.1.8`.
 
 **Or use the install scripts (after cloning):**
 
@@ -107,6 +109,7 @@ If the project is already initialized and has pending tasks, `launch` alone is e
 | Interactive `launch` and direct `run` | Choose the next task (the update agent does that) |
 | Route models by complexity score | Manage nested task hierarchies |
 | Inject `ai-context.md` into implementation prompts | Replace the update agent's handover or doc duties |
+| Recover empty-detail run errors on the same agent before retrying | |
 | Preflight via `doctor`, Rich dashboard, resume history | |
 | `bootstrap`: explicit PRD re-parse when needed | |
 
@@ -201,7 +204,7 @@ By default this command **re-runs** analysis and replaces a stale report (e.g. f
 | `--resume` | Skip completed parent tasks from run history |
 | `--fresh` | Force first-prompt bootstrap; ignore ready handover |
 | `--plain` | Disable Rich dashboard; plain text logs |
-| `--retry-on off` | Disable default transient retry (SDK blips and empty-detail run errors) |
+| `--retry-on off` | Disable default transient retry (SDK blips, same-agent continue, and fresh-agent retry on empty-detail run errors) |
 | `--dry-run` | Resolve task and model without starting an agent |
 
 See [`cyclopsctl.toml.example`](cyclopsctl.toml.example) for full TOML options including `[routing]` rules, `[profile.*]` presets, `[tasks]` parse/analyze models, and `task_source`.
@@ -237,10 +240,12 @@ Reads `.cyclopsctl/reports/complexity-report.json`:
 | Complexity score | Default model |
 |----------------|---------------|
 | 1–5 | Composer (`composer_tier`: standard or fast) |
-| 6–8 | Grok (`grok_tier`: standard or fast; default **standard** / not-fast) |
+| 6–8 | Grok 4.6 (`grok_tier`: standard or fast; default **standard** / not-fast) |
 | 9–10 | Fable 5 high-thinking (falls back to Grok if Fable is disabled or unavailable) |
 
 Configure via `[routing]` in `cyclopsctl.toml` (`composer_tier`, `grok_tier`, `fable_enabled`, score-band `[[routing.rules]]`), CLI flags (`--composer-tier`, `--grok-tier`, `--no-fable`), or interactive `cyclopsctl launch` prompts. Full guide: [`docs/runtime/model-routing.md`](docs/runtime/model-routing.md). Inspect presets with `cyclopsctl models`.
+
+**Transient recovery:** by default, empty-detail run errors (infrastructure drops with no SDK message) trigger one **same-agent continue** on the live handle before a fresh-agent cycle retry. If diagnostics show the agent was already mid-work (e.g. a full test suite), cyclopsctl stops instead of starting over — see [`docs/runtime/transient-retry.md`](docs/runtime/transient-retry.md).
 
 ### Exit codes
 
