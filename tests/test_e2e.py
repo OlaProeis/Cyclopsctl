@@ -55,12 +55,11 @@ class _StartupErrorAgent:
 class _RunErrorAgent(_FakeAgent):
     def send(self, prompt: str) -> _FakeRun:
         run = super().send(prompt)
-        if len(self.sent) == 1:
-            run.wait = lambda: RunResult(
-                id=run.id,
-                agent_id=run.agent_id,
-                status="error",
-            )
+        run.wait = lambda: RunResult(
+            id=run.id,
+            agent_id=run.agent_id,
+            status="error",
+        )
         return run
 
 

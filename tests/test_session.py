@@ -8,7 +8,11 @@ import pytest
 from cursor_sdk import ModelSelection
 
 from cyclopsctl.runner import AgentRunError, RunFailureKind, SendRunResult
-from cyclopsctl.session import CycleSession, SessionError
+from cyclopsctl.session import (
+    EMPTY_RUN_ERROR_CONTINUE_PROMPT,
+    CycleSession,
+    SessionError,
+)
 
 
 class _FakeRun:
@@ -199,3 +203,94 @@ def test_cycle_session_propagates_run_failure(tmp_path: Path):
         session.start_implementation("fail")
 
     assert exc_info.value.kind == RunFailureKind.RUN
+    assert exc_info.value.same_agent_continued is True
+    agent = session._agent
+    assert agent is not None
+    assert agent.sent == ["fail", EMPTY_RUN_ERROR_CONTINUE_PROMPT]
+
+
+def test_cycle_session_continues_same_agent_after_empty_run_error(tmp_path: Path):
+    class _ErrorThenOkAgent(_FakeAgent):
+        def send(self, prompt: str) -> _FakeRun:
+            run = super().send(prompt)
+            if len(self.sent) == 1:
+                run.wait = lambda: __import__("cursor_sdk").RunResult(
+                    id=run.id,
+                    agent_id=run.agent_id,
+                    status="error",
+                )
+            return run
+
+    session = CycleSession(
+        project_root=tmp_path,
+        model=ModelSelection(id="composer-2.5"),
+        create_agent=lambda **_kwargs: _ErrorThenOkAgent(),
+    )
+
+    result = session.start_implementation("implement task")
+
+    assert result.status == "finished"
+    agent = session._agent
+    assert agent is not None
+    assert agent.sent == ["implement task", EMPTY_RUN_ERROR_CONTINUE_PROMPT]
+
+
+def test_cycle_session_does_not_continue_when_run_has_detail(tmp_path: Path):
+    class _DetailedErrorAgent(_FakeAgent):
+        def send(self, prompt: str) -> _FakeRun:
+            run = super().send(prompt)
+            run.wait = lambda: __import__("cursor_sdk").RunResult(
+                id=run.id,
+                agent_id=run.agent_id,
+                status="error",
+                result="agent reported: tests failed",
+            )
+            return run
+
+    session = CycleSession(
+        project_root=tmp_path,
+        model=ModelSelection(id="composer-2.5"),
+        create_agent=lambda **_kwargs: _DetailedErrorAgent(),
+    )
+
+    with pytest.raises(AgentRunError) as exc_info:
+        session.start_implementation("fail")
+
+    assert exc_info.value.result_detail == "agent reported: tests failed"
+    assert exc_info.value.same_agent_continued is False
+    agent = session._agent
+    assert agent is not None
+    assert agent.sent == ["fail"]
+
+
+def test_cycle_session_continue_preserves_original_midwork_diagnostic(tmp_path: Path):
+    class _ProductiveDropAgent(_FakeAgent):
+        def send(self, prompt: str) -> _FakeRun:
+            run = super().send(prompt)
+
+            def conversation_json() -> str:
+                return (
+                    '[{"text": "Running the phase 13 integration test '
+                    'and the full cargo test suite."}]'
+                )
+
+            run.conversation_json = conversation_json
+            run.wait = lambda: __import__("cursor_sdk").RunResult(
+                id=run.id,
+                agent_id=run.agent_id,
+                status="error",
+            )
+            return run
+
+    session = CycleSession(
+        project_root=tmp_path,
+        model=ModelSelection(id="composer-2.5"),
+        create_agent=lambda **_kwargs: _ProductiveDropAgent(),
+    )
+
+    with pytest.raises(AgentRunError) as exc_info:
+        session.start_implementation("implement task")
+
+    err = exc_info.value
+    assert err.same_agent_continued is True
+    assert "full cargo test suite" in (err.diagnostic_detail or "")

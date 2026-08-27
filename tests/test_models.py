@@ -366,8 +366,8 @@ def test_format_models_diagnostic_shows_fallback_when_frontier_missing():
 def test_detect_grok_prefers_standard_high_effort_not_fast():
     models = [
         SDKModel(
-            id="grok-4.5",
-            display_name="Cursor Grok 4.5",
+            id="grok-4.6",
+            display_name="Cursor Grok 4.6",
             variants=(
                 ModelVariant(
                     display_name="Fast high",
@@ -389,7 +389,7 @@ def test_detect_grok_prefers_standard_high_effort_not_fast():
     ]
     selection = detect_grok(models, grok_tier="standard")
     assert selection is not None
-    assert selection.id == "grok-4.5"
+    assert selection.id == "grok-4.6"
     assert ("fast", "false") in {(p.id, p.value) for p in selection.params}
     assert ("effort", "high") in {(p.id, p.value) for p in selection.params}
 

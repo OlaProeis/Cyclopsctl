@@ -10,6 +10,7 @@ from cursor_sdk import Agent, CursorAgentError, ModelSelection
 
 from cyclopsctl.runner import (
     ActivityCallback,
+    AgentRunError,
     CreateAgentFn,
     PlanUpdateCallback,
     SendFn,
@@ -17,7 +18,24 @@ from cyclopsctl.runner import (
     WaitFn,
     create_local_agent,
     send_and_wait,
+    should_continue_same_agent,
 )
+
+# Sent once on the live agent handle after an empty-detail run error.
+# Not a crash-resume (PRD out of scope): the SDK already returned, and the
+# same CycleSession agent is often still usable for a follow-up send.
+EMPTY_RUN_ERROR_CONTINUE_PROMPT = """\
+The previous agent run ended with status=error and no SDK result detail \
+(an infrastructure drop, not a reported task failure). The workspace and \
+any in-progress edits are still on disk.
+
+Continue the current phase from where you left off:
+- Inspect the workspace, terminals, and last commands before doing more work.
+- Do not redo completed edits.
+- Do not re-run a full project test suite unless a targeted test shows a \
+real failure or the previous suite never finished.
+- Finish the current task only; do not start the next task or edit handover files.
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +80,8 @@ class CycleSession:
             api_key=self.api_key,
             create_agent=self.create_agent,
         )
-        self.implementation = send_and_wait(
-            self._agent,
-            prompt,
-            phase="implementation",
-            send_fn=self.send_fn,
-            wait_fn=self.wait_fn,
-            on_activity=self.on_activity,
-            on_plan_update=self.on_plan_update,
+        self.implementation = self._send_and_wait_phase(
+            prompt, phase="implementation"
         )
         return self.implementation
 
@@ -80,16 +92,46 @@ class CycleSession:
                 "Cannot run update phase before implementation has started"
             )
 
-        self.update = send_and_wait(
+        self.update = self._send_and_wait_phase(prompt, phase="update")
+        return self.update
+
+    def _send_and_wait_phase(self, prompt: str, *, phase: str) -> SendRunResult:
+        """Send ``prompt``; on empty-detail run error, nudge the same agent once."""
+        if self._agent is None:
+            raise SessionError(f"Cannot send {phase} prompt without an agent")
+        try:
+            return self._send_and_wait(prompt, phase=phase)
+        except AgentRunError as exc:
+            if self._agent is None or not should_continue_same_agent(exc):
+                raise
+            logger.warning(
+                "Empty-detail %s run error; sending same-agent continue "
+                "(agent=%s run=%s diagnostic=%s)",
+                phase,
+                exc.agent_id,
+                exc.run_id,
+                exc.diagnostic_detail,
+            )
+            try:
+                return self._send_and_wait(
+                    EMPTY_RUN_ERROR_CONTINUE_PROMPT, phase=phase
+                )
+            except AgentRunError as continue_exc:
+                _annotate_continue_failure(continue_exc, original=exc)
+                raise continue_exc
+
+    def _send_and_wait(self, prompt: str, *, phase: str) -> SendRunResult:
+        if self._agent is None:
+            raise SessionError(f"Cannot send {phase} prompt without an agent")
+        return send_and_wait(
             self._agent,
             prompt,
-            phase="update",
+            phase=phase,
             send_fn=self.send_fn,
             wait_fn=self.wait_fn,
             on_activity=self.on_activity,
             on_plan_update=self.on_plan_update,
         )
-        return self.update
 
     def close(self) -> None:
         """Dispose the agent handle (best-effort).
@@ -119,3 +161,18 @@ class CycleSession:
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
+
+
+def _annotate_continue_failure(
+    continue_exc: AgentRunError, *, original: AgentRunError
+) -> None:
+    """Mark a failed continue and keep the original mid-work diagnostic."""
+    continue_exc.same_agent_continued = True
+    original_detail = (original.diagnostic_detail or "").strip()
+    continue_detail = (continue_exc.diagnostic_detail or "").strip()
+    if original_detail and continue_detail:
+        continue_exc.diagnostic_detail = (
+            f"{continue_detail} (after continue; earlier: {original_detail})"
+        )
+    elif original_detail:
+        continue_exc.diagnostic_detail = original_detail

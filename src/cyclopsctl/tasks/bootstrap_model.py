@@ -58,7 +58,7 @@ _BOOTSTRAP_PRESETS: tuple[tuple[str, str, str], ...] = (
     (
         "4",
         BOOTSTRAP_PRESET_GROK,
-        "Grok 4.5 — strong agentic parse/analyze; good cost/speed for most PRDs (API credits)",
+        "Grok 4.6 — strong agentic parse/analyze; good cost/speed for most PRDs (API credits)",
     ),
     (
         "5",
@@ -91,6 +91,7 @@ _PRESET_ALIASES: dict[str, str] = {
     "sonnet": BOOTSTRAP_PRESET_SONNET,
     "g": BOOTSTRAP_PRESET_GROK,
     "grok": BOOTSTRAP_PRESET_GROK,
+    "grok-4.6": BOOTSTRAP_PRESET_GROK,
     "grok-4.5": BOOTSTRAP_PRESET_GROK,
     "grok-standard": BOOTSTRAP_PRESET_GROK,
     "f": BOOTSTRAP_PRESET_FABLE,

@@ -109,7 +109,7 @@ def test_route_low_complexity_uses_composer():
         complexity_report=ComplexityReport(scores={3: 4}),
         capabilities=_capabilities(
             fable=ModelSelection(id="claude-fable-5"),
-            grok=ModelSelection(id="grok-4.5"),
+            grok=ModelSelection(id="grok-4.6"),
         ),
     )
     decision = router.route(3)
@@ -121,7 +121,7 @@ def test_route_low_complexity_uses_composer():
 
 def test_route_mid_complexity_uses_grok():
     grok = ModelSelection(
-        id="grok-4.5",
+        id="grok-4.6",
         params=(
             ModelParameterValue(id="effort", value="high"),
             ModelParameterValue(id="fast", value="false"),
@@ -148,7 +148,7 @@ def test_route_high_complexity_uses_fable():
     )
     router = ModelRouter(
         complexity_report=ComplexityReport(scores={7: 9}),
-        capabilities=_capabilities(fable=fable, grok=ModelSelection(id="grok-4.5")),
+        capabilities=_capabilities(fable=fable, grok=ModelSelection(id="grok-4.6")),
     )
     decision = router.route(7)
     assert decision.model == fable
@@ -162,7 +162,7 @@ def test_route_missing_score_falls_back_to_composer():
         complexity_report=ComplexityReport(scores={1: 5}),
         capabilities=_capabilities(
             fable=ModelSelection(id="claude-fable-5"),
-            grok=ModelSelection(id="grok-4.5"),
+            grok=ModelSelection(id="grok-4.6"),
         ),
     )
     decision = router.route(99)
@@ -176,7 +176,7 @@ def test_route_missing_report_uses_composer():
         complexity_report=ComplexityReport(scores={}),
         capabilities=_capabilities(
             fable=ModelSelection(id="claude-fable-5"),
-            grok=ModelSelection(id="grok-4.5"),
+            grok=ModelSelection(id="grok-4.6"),
         ),
     )
     decision = router.route(5)
@@ -185,7 +185,7 @@ def test_route_missing_report_uses_composer():
 
 
 def test_route_fable_unavailable_falls_back_to_grok():
-    grok = ModelSelection(id="grok-4.5")
+    grok = ModelSelection(id="grok-4.6")
     router = ModelRouter(
         default_model="my-default-model",
         complexity_report=ComplexityReport(scores={7: 10, 8: 9}),
@@ -240,8 +240,8 @@ def test_router_from_paths_integration(tmp_path: Path):
     models = [
         SDKModel(id="composer-2.5", display_name="Composer 2.5"),
         SDKModel(
-            id="grok-4.5",
-            display_name="Grok 4.5",
+            id="grok-4.6",
+            display_name="Grok 4.6",
             variants=(
                 ModelVariant(
                     display_name="High",
@@ -280,14 +280,14 @@ def test_router_from_paths_integration(tmp_path: Path):
 
     assert low.model.id == COMPOSER_MODEL_ID
     assert mid.used_grok is True
-    assert mid.model.id == "grok-4.5"
+    assert mid.model.id == "grok-4.6"
     assert high.used_fable is True
     assert high.model.id == "claude-fable-5"
 
 
 def test_disable_premium_runtime_falls_back_to_grok_for_high_scores():
     fable = ModelSelection(id="claude-fable-5")
-    grok = ModelSelection(id="grok-4.5")
+    grok = ModelSelection(id="grok-4.6")
     caps = _capabilities(fable=fable, grok=grok)
     router = ModelRouter(
         default_model=COMPOSER_MODEL_ID,
@@ -308,7 +308,7 @@ def test_disable_premium_runtime_falls_back_to_grok_for_high_scores():
 
 
 def test_legacy_routing_golden_parity_across_score_bands():
-    grok = ModelSelection(id="grok-4.5")
+    grok = ModelSelection(id="grok-4.6")
     fable = ModelSelection(id="claude-fable-5")
     caps = _capabilities(grok=grok, fable=fable)
     for score in range(1, 6):
@@ -420,7 +420,7 @@ def test_fable_gating_falls_back_to_grok_then_composer():
         fallback=RoutingFallback(model="composer-standard"),
         fable_enabled=False,
     )
-    grok = ModelSelection(id="grok-4.5")
+    grok = ModelSelection(id="grok-4.6")
     caps = _capabilities(fable=ModelSelection(id="claude-fable-5"), grok=grok)
 
     decision = resolve_model_for_score(
@@ -438,7 +438,7 @@ def test_fable_gating_falls_back_to_grok_then_composer():
 
 
 def test_legacy_high_band_uses_grok_when_fable_disabled():
-    grok = ModelSelection(id="grok-4.5")
+    grok = ModelSelection(id="grok-4.6")
     caps = _capabilities(fable=ModelSelection(id="claude-fable-5"), grok=grok)
     decision = resolve_model_for_score(
         10,

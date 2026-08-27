@@ -34,7 +34,9 @@ def _run_error(
     agent_id: str | None = "agent-db077b6c",
     run_id: str | None = "run-a9ee18a0",
     result_detail: str | None = None,
+    diagnostic_detail: str | None = None,
     phase: str = "implementation",
+    same_agent_continued: bool = False,
 ) -> AgentRunError:
     return AgentRunError(
         "implementation run failed: agent=agent-db077b6c run=run-a9ee18a0",
@@ -43,7 +45,9 @@ def _run_error(
         agent_id=agent_id,
         run_id=run_id,
         result_detail=result_detail,
+        diagnostic_detail=diagnostic_detail,
         phase=phase,
+        same_agent_continued=same_agent_continued,
     )
 
 
@@ -225,6 +229,24 @@ def test_format_failure_report_with_detail_and_no_transcript(tmp_path: Path):
     )
     assert "boom: tests failed" in report
     assert "(local transcript not found)" in report
+
+
+def test_format_failure_report_notes_same_agent_continue_after_midwork_drop(
+    tmp_path: Path,
+):
+    report = format_failure_report(
+        _run_error(
+            diagnostic_detail=(
+                "last agent output: Running the phase 13 integration test "
+                "and the full cargo test suite."
+            ),
+            same_agent_continued=True,
+        ),
+        project_root=tmp_path,
+        home=tmp_path,
+    )
+    assert "same-agent continue already attempted" in report
+    assert "dropped mid-work; not retrying a fresh agent" in report
 
 
 # --- state FAILED status -------------------------------------------------

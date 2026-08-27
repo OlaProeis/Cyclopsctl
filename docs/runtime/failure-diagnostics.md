@@ -19,7 +19,8 @@ Agent run failed during implementation (kind=startup, exit 1)
 ```
 
 - **detail** — `AgentRunError.result_detail` when present, else an explicit `(SDK returned no detail)`. Used for retry and billing classification.
-- **context** — `AgentRunError.diagnostic_detail` when `runner.extract_run_error_detail` finds a better string in the run conversation (`run.conversation_json()`): the most recent error-keyed message, or the agent's last prose. Display-only; never affects transient retry or Opus → Composer billing fallback.
+- **context** — `AgentRunError.diagnostic_detail` when `runner.extract_run_error_detail` finds a better string in the run conversation (`run.conversation_json()`): the most recent error-keyed message, or the agent's last prose. After a same-agent continue, mid-work hints here skip a fresh-agent retry (see `docs/runtime/transient-retry.md`). Billing fallback still keys off `result_detail` only.
+- **recovery** — when `same_agent_continued` is set, the report notes that the live handle was already nudged. Mid-work drops add that a fresh agent will not be started.
 - **transcript** — the resolved local Cursor JSONL path when it exists on disk, else `(local transcript not found)`. The cyclopsctl does **not** call `Agent.get_run` (unreliable after failure); it points at the local transcript instead.
 - **last activity** — when the transcript exists, `summarize_transcript_tail` parses the last assistant tool invocations (and any non-redacted prose) so a `kind=run` failure with an empty SDK `result` still shows what the agent was doing (the SDK export records tool *invocations*, not results, so this is a best-effort action trail). Output is ASCII so the report can never fail to print on legacy Windows consoles.
 
@@ -50,7 +51,7 @@ Resolution also scans the projects directory case-insensitively so drive-letter 
 |--------|------|
 | `failure_report.py` | `encode_project_slug`, `resolve_transcript_path`, `summarize_transcript_tail`, `format_failure_report` (incl. optional `context:` line) |
 | `cli.py` | `_log_and_exit_agent_run` — structured log + stderr report on `AgentRunError` |
-| `runner.py` | `AgentRunError.phase`, `diagnostic_detail`; `extract_run_error_detail` (best-effort conversation scrape) |
+| `runner.py` | `AgentRunError.phase`, `diagnostic_detail`, `same_agent_continued`; `extract_run_error_detail`, `looks_like_productive_run_drop` |
 | `loop.py` | `_persist_phase_failure` — `failed` state with agent/run ids |
 
 ## Tests

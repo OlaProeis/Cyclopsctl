@@ -123,6 +123,7 @@ class AgentRunError(RuntimeError):
         diagnostic_detail: str | None = None,
         phase: str | None = None,
         cause: BaseException | None = None,
+        same_agent_continued: bool = False,
     ) -> None:
         super().__init__(message)
         self.kind = kind
@@ -131,11 +132,17 @@ class AgentRunError(RuntimeError):
         self.run_id = run_id
         self.result_detail = result_detail
         # Best-effort context recovered from the run conversation when the SDK
-        # returned no ``result`` detail. Display-only: never used for retry or
-        # billing-failure classification.
+        # returned no ``result`` detail. Used for display and to avoid a
+        # fresh-agent retry after a mid-work drop (see
+        # ``looks_like_productive_run_drop``). Billing fallback still keys
+        # off ``result_detail`` only.
         self.diagnostic_detail = diagnostic_detail
         self.phase = phase
         self.cause = cause
+        # Set when CycleSession already sent a same-agent continue after an
+        # empty-detail run error. Fresh-agent cycle retry is then skipped for
+        # productive mid-work drops (long test suites / last agent output).
+        self.same_agent_continued = same_agent_continued
 
 
 @dataclass(frozen=True)
@@ -818,6 +825,53 @@ def is_transient_cursor_agent_error(exc: CursorAgentError) -> bool:
     return status in _TRANSIENT_HTTP_STATUSES
 
 
+_PRODUCTIVE_RUN_DROP_HINTS: tuple[str, ...] = (
+    "last agent output:",
+    "full test suite",
+    "cargo test",
+    "npm test",
+    "playwright",
+    "soak",
+)
+
+
+def should_continue_same_agent(exc: BaseException) -> bool:
+    """Return whether an empty-detail run error should get one same-agent nudge.
+
+    A completed run with ``status == "error"`` and no SDK ``result`` is usually
+    an infrastructure drop, not a reported task failure. The agent handle is
+    often still usable for a follow-up send (unlike ``Agent.resume`` after the
+    process is gone). Logical failures that carry ``result_detail`` are never
+    continued this way.
+    """
+    if not isinstance(exc, AgentRunError):
+        return False
+    if exc.kind != RunFailureKind.RUN:
+        return False
+    if exc.same_agent_continued:
+        return False
+    return not (exc.result_detail or "").strip()
+
+
+def looks_like_productive_run_drop(exc: AgentRunError) -> bool:
+    """Return whether the run died after the agent was already doing work.
+
+    Fresh-agent retry then re-does the whole implementation (often another
+    full ``cargo test`` / e2e suite) and frequently re-triggers the same
+    host drop or OOM. Same-agent continue is the recovery; if that also
+    fails, stop and let the operator relaunch.
+    """
+    haystack = " ".join(
+        part
+        for part in (
+            exc.diagnostic_detail or "",
+            str(exc),
+        )
+        if part
+    ).lower()
+    return any(hint in haystack for hint in _PRODUCTIVE_RUN_DROP_HINTS)
+
+
 def is_transient_agent_failure(exc: BaseException) -> bool:
     """
     Return whether ``exc`` is a transient agent failure worth retrying.
@@ -832,14 +886,25 @@ def is_transient_agent_failure(exc: BaseException) -> bool:
       (model/server/connection), not an agent logical failure; re-running the
       cycle with a fresh agent is the same recovery as a manual relaunch.
 
-    Run failures that carry an SDK detail (e.g. billing/credits messages) and
-    non-agent errors are never transient.
+    Not retried:
+
+    - Run failures that carry an SDK detail (e.g. billing/credits).
+    - Empty-detail run errors after a same-agent continue already ran **and**
+      the diagnostic shows the agent was mid-work (test suite / last prose).
+      Another fresh agent would repeat that work and often OOM again.
+    - Non-agent errors.
     """
     if not isinstance(exc, AgentRunError):
         return False
     if exc.kind == RunFailureKind.RUN:
-        return not (exc.result_detail or "").strip()
+        if (exc.result_detail or "").strip():
+            return False
+        if exc.same_agent_continued and looks_like_productive_run_drop(exc):
+            return False
+        return True
     if exc.kind != RunFailureKind.STARTUP:
+        return False
+    if exc.same_agent_continued and looks_like_productive_run_drop(exc):
         return False
     cause = exc.cause
     if isinstance(cause, CursorAgentError):

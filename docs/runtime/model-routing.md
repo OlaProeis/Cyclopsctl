@@ -44,7 +44,7 @@ Copy from `cyclopsctl.toml.example`. Loaded into `CyclopsctlConfig.routing` via 
 |-------|-------------|
 | `composer`, `composer-standard`, `composer-2.5` | Standard Composer |
 | `composer-fast`, `composer-2.5-fast` | Fast Composer |
-| `grok`, `grok-standard`, `grok-4.5` | Grok (respects `grok_tier` when using `grok` / `grok-standard`) |
+| `grok`, `grok-standard`, `grok-4.6`, `grok-4.5` | Grok (respects `grok_tier` when using `grok` / `grok-standard`) |
 | `grok-fast` | Fast Grok |
 | `fable`, `fable-high-thinking`, `fable-5` | Fable high-thinking |
 | `opus`, `opus-high-thinking` | Opus high-thinking |

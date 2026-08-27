@@ -87,8 +87,8 @@ def _models() -> list[SDKModel]:
             ),
         ),
         SDKModel(
-            id="grok-4.5",
-            display_name="Cursor Grok 4.5",
+            id="grok-4.6",
+            display_name="Cursor Grok 4.6",
             description="",
             variants=(
                 ModelVariant(
@@ -115,6 +115,7 @@ def test_normalize_bootstrap_preset_aliases():
     assert normalize_bootstrap_preset("composer") == BOOTSTRAP_PRESET_COMPOSER
     assert normalize_bootstrap_preset("AUTO") == BOOTSTRAP_PRESET_AUTO
     assert normalize_bootstrap_preset("grok") == BOOTSTRAP_PRESET_GROK
+    assert normalize_bootstrap_preset("grok-4.6") == BOOTSTRAP_PRESET_GROK
     assert normalize_bootstrap_preset("grok-4.5") == BOOTSTRAP_PRESET_GROK
     assert normalize_bootstrap_preset("opus") == BOOTSTRAP_PRESET_OPUS
     assert normalize_bootstrap_preset("sonnet-max") == BOOTSTRAP_PRESET_SONNET_MAX
@@ -152,7 +153,7 @@ def test_bootstrap_model_attempt_chain_grok_falls_back_to_sonnet_then_composer()
         api_key="key",
         list_models=list_models,
     )
-    assert chain[0].id == "grok-4.5"
+    assert chain[0].id == "grok-4.6"
     assert ("fast", "false") in {(p.id, p.value) for p in chain[0].params}
     assert [model.id for model in chain[1:]] == [
         "claude-sonnet-4-6",

@@ -278,7 +278,7 @@ def format_model_selection(complexity: int | None) -> str:
         )
     if complexity >= 6:
         return (
-            f"Complexity **{complexity}** → **Grok 4.5** (`grok`). "
+            f"Complexity **{complexity}** → **Grok 4.6** (`grok`). "
             f"Informational only; the cyclopsctl selects the runtime model from "
             f"the complexity report when using automated runs."
         )

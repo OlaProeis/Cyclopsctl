@@ -26,7 +26,7 @@ Init and parse/analyze use the same preset for both steps. Interactive init show
 | `auto` | Default — Sonnet first, Composer fallback on failure |
 | `composer` | Simple PRDs; included with Cursor (no extra API credits) |
 | `sonnet` | Strong JSON/decomposition; good quality/cost balance |
-| `grok` | Grok 4.5 standard (not-fast); strong agentic parse/analyze at good cost/speed |
+| `grok` | Grok 4.6 standard (not-fast); strong agentic parse/analyze at good cost/speed |
 | `fable-high-thinking` | Fable 5 high-thinking for strong decomposition |
 | `opus-high-thinking` | Large technical PRDs needing deep decomposition |
 | `sonnet-max` | Very long PRDs; uses `context=1m` / `max=true` variant params when listed |

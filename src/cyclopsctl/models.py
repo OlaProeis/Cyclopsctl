@@ -18,7 +18,7 @@ from cursor_sdk import (
 
 COMPOSER_MODEL_ID = "composer-2.5"
 COMPOSER_FAST_MODEL_ID = "composer-2.5-fast"
-GROK_MODEL_ID = "grok-4.5"
+GROK_MODEL_ID = "grok-4.6"
 COMPOSER_COMPLEXITY_MAX = 5
 GROK_COMPLEXITY_MIN = 6
 GROK_COMPLEXITY_MAX = 8
@@ -585,7 +585,12 @@ def _pick_grok_variant(
             # Allow base grok ids; only skip explicitly disqualified flat max ids.
             if "max" in model.id.lower():
                 continue
-        base = 20 if "4.5" in model.id or "4-5" in model.id else 10
+        if "4.6" in model.id or "4-6" in model.id:
+            base = 20
+        elif "4.5" in model.id or "4-5" in model.id:
+            base = 15
+        else:
+            base = 10
         if not model.variants:
             if want_fast == _is_fast_model_id(model.id, model.display_name or ""):
                 selection = ModelSelection(id=model.id)

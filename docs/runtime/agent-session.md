@@ -6,7 +6,7 @@
 
 - **`create_local_agent`** — `Agent.create` with `local.cwd=project_root` and optional `api_key`; raises **`AgentRunError`** on `CursorAgentError` (startup, exit code 1).
 - **`send_and_wait`** — sends prompt unchanged; optionally consumes SDK activity streams via `on_activity` before `run.wait()`; returns **`SendRunResult`** (`agent_id`, `run_id`, `status`, `result`).
-- **`AgentRunError`** — `RunFailureKind.STARTUP` (exit 1) vs `RunFailureKind.RUN` when `status == "error"` (exit 2). Carries `agent_id`, `run_id`, `result_detail`, optional `diagnostic_detail` (display-only conversation context), and `phase` (`"startup"` / `"implementation"` / `"update"`) for failure diagnostics (see `docs/runtime/failure-diagnostics.md`). Empty `result_detail` on a run error is treated as transient when `retry_on = "transient"` (see `docs/runtime/transient-retry.md`).
+- **`AgentRunError`** — `RunFailureKind.STARTUP` (exit 1) vs `RunFailureKind.RUN` when `status == "error"` (exit 2). Carries `agent_id`, `run_id`, `result_detail`, optional `diagnostic_detail` (conversation context), `phase` (`"startup"` / `"implementation"` / `"update"`), and `same_agent_continued` (see `docs/runtime/failure-diagnostics.md`). Empty `result_detail` on a run error is treated as transient when `retry_on = "transient"`, except after a same-agent continue that died mid-work (see `docs/runtime/transient-retry.md`).
 - Injectable `create_agent`, `send_fn`, `wait_fn` for tests.
 
 ## Session (`session.py`)
@@ -14,9 +14,10 @@
 - **`CycleSession`** — one cyclopsctl cycle:
   - **`start_implementation(prompt)`** — fresh `Agent.create`, then `send_and_wait` (new agent every call).
   - **`run_update(prompt)`** — same agent handle, second `send_and_wait`.
+  - **Same-agent continue** — if `send_and_wait` returns `status == "error"` with **no SDK detail**, the session sends `EMPTY_RUN_ERROR_CONTINUE_PROMPT` once on the **same** live handle (inspect workspace, do not redo work, do not re-run a full test suite). This is not crash-resume via `Agent.resume` (PRD out of scope); it only runs when `wait()` already returned. A second empty-detail error is annotated with `same_agent_continued=True` and the original diagnostic.
   - **`on_activity`** — optional callback forwarded to `send_and_wait` for Rich live activity (see `docs/runtime/cycle-dashboard.md`).
   - **`close()`** / context manager — disposes the agent.
-- **`SessionError`** — raised if update runs before implementation.
+  - **`SessionError`** — raised if update runs before implementation.
 
 Create a new `CycleSession` per cycle so each implementation phase gets a new agent.
 
@@ -44,4 +45,4 @@ The bridge spawns child node/npm/test processes (the agent's shell commands run 
 - `ManagedBridge.close()` is idempotent; on Windows `_terminate_process` uses `taskkill /F /T` to terminate the bridge subprocess **and its descendants** (otherwise a background `npm test` / Playwright soak orphans when the run ends). Non-Windows falls back to `terminate()` / `kill()`.
 - Launched bridges are tracked in a module registry; an `atexit` handler (`_close_active_bridges_atexit`) closes any still open at interpreter exit, as a safety net for exit paths that skip the `managed_sdk_bridge` context manager's `finally`.
 
-Tests: `tests/test_runner.py`, `tests/test_session.py`, `tests/test_sdk_bridge.py`.
+Tests: `tests/test_runner.py`, `tests/test_session.py`, `tests/test_retry.py`, `tests/test_sdk_bridge.py`.

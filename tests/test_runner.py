@@ -17,7 +17,9 @@ from cyclopsctl.runner import (
     is_opus_billing_failure,
     is_transient_agent_failure,
     is_transient_cursor_agent_error,
+    looks_like_productive_run_drop,
     retry_delay_seconds,
+    should_continue_same_agent,
     send_and_wait,
     should_retry_transient_failure,
     should_retry_with_composer_after_opus_failure,
@@ -307,6 +309,61 @@ def test_is_transient_agent_failure_rejects_run_kind_with_detail():
 
 def test_is_transient_agent_failure_rejects_non_agent_errors():
     assert is_transient_agent_failure(ValueError("network down")) is False
+
+
+def test_should_continue_same_agent_only_for_empty_detail_run_errors():
+    empty = AgentRunError(
+        "run failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+    )
+    detailed = AgentRunError(
+        "run failed: tests failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+        result_detail="tests failed",
+    )
+    already = AgentRunError(
+        "run failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+        same_agent_continued=True,
+    )
+    startup = AgentRunError(
+        "send failed",
+        kind=RunFailureKind.STARTUP,
+        exit_code=STARTUP_EXIT_CODE,
+    )
+    assert should_continue_same_agent(empty) is True
+    assert should_continue_same_agent(detailed) is False
+    assert should_continue_same_agent(already) is False
+    assert should_continue_same_agent(startup) is False
+
+
+def test_productive_run_drop_skips_fresh_retry_after_same_agent_continue():
+    err = AgentRunError(
+        "implementation run failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+        diagnostic_detail=(
+            "last agent output: Running the phase 13 integration test "
+            "and the full cargo test suite."
+        ),
+        same_agent_continued=True,
+    )
+    assert looks_like_productive_run_drop(err) is True
+    assert is_transient_agent_failure(err) is False
+
+
+def test_empty_detail_without_midwork_hint_stays_transient_after_continue():
+    err = AgentRunError(
+        "run failed",
+        kind=RunFailureKind.RUN,
+        exit_code=RUN_FAILURE_EXIT_CODE,
+        same_agent_continued=True,
+    )
+    assert looks_like_productive_run_drop(err) is False
+    assert is_transient_agent_failure(err) is True
 
 
 def test_retry_delay_seconds_uses_backoff_sequence():

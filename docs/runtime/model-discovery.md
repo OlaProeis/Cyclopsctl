@@ -6,7 +6,7 @@
 
 - **`discover_model_capabilities`** — calls `Cursor.models.list()` (injectable `list_models` / `api_key` for tests) and returns **`ModelCapabilities`**. Accepts optional `composer_tier` and `grok_tier` (`"standard"`, `"fast"`, or explicit model id).
 - **`detect_composer`** — resolves Composer from listings with tier preference; prefers explicit `fast=false` / `fast=true` variant params when listed.
-- **`detect_grok`** / **`detect_grok_standard`** / **`detect_grok_fast`** — resolve Grok (`grok-4.5`) with `effort=high` and the requested `fast` flag. Catalog default is often `fast=true`; orchestration defaults to **standard** (`fast=false`).
+- **`detect_grok`** / **`detect_grok_standard`** / **`detect_grok_fast`** — resolve Grok (`grok-4.6`) with `effort=high` and the requested `fast` flag. Catalog default is often `fast=true`; orchestration defaults to **standard** (`fast=false`).
 - **`detect_fable_high_thinking`** — picks Fable 5 with `thinking=true` + `effort=high` on non-Max context.
 - **`detect_opus_high_thinking`** — picks an Opus high-thinking / high-effort preset; excludes fast and Max tiers.
 - **`detect_sonnet_max`** / **`detect_opus_max`** — bootstrap Max Mode presets.

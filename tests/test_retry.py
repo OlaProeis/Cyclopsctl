@@ -13,7 +13,7 @@ from cyclopsctl.loop import run_cycles
 from cyclopsctl.models import COMPOSER_MODEL_ID, ModelCapabilities
 from cyclopsctl.runner import AgentRunError, RunFailureKind, STARTUP_EXIT_CODE
 from cyclopsctl.routing import ComplexityReport, ModelRouter
-from cyclopsctl.session import CycleSession
+from cyclopsctl.session import EMPTY_RUN_ERROR_CONTINUE_PROMPT, CycleSession
 from cyclopsctl.tasks.types import NextTaskLookup, NextTaskResult
 from cyclopsctl.verify import HandoverVerificationError
 
@@ -74,6 +74,27 @@ class _RunErrorOnceAgent(_FakeAgent):
                 agent_id=run.agent_id,
                 status="error",
             )
+        return run
+
+
+class _ProductiveDropAgent(_FakeAgent):
+    """Every send errors with last-prose context from a mid-suite drop."""
+
+    def send(self, prompt: str) -> _FakeRun:
+        run = super().send(prompt)
+
+        def conversation_json() -> str:
+            return (
+                '[{"text": "Running the phase 13 integration test '
+                'and the full cargo test suite."}]'
+            )
+
+        run.conversation_json = conversation_json
+        run.wait = lambda: RunResult(
+            id=run.id,
+            agent_id=run.agent_id,
+            status="error",
+        )
         return run
 
 
@@ -272,10 +293,16 @@ def test_run_cycles_does_not_retry_auth_failure(project_tree: Path):
     assert sleeps == []
 
 
-def test_run_cycles_retries_run_error_without_detail(project_tree: Path):
-    """An errored run with an empty SDK result is treated as transient."""
+def test_run_cycles_continues_same_agent_on_empty_run_error(project_tree: Path):
+    """Empty-detail run errors recover on the same agent before a cycle retry."""
     cfg = _config(project_tree, retry_on="transient", retry_max_attempts=3)
     sleeps: list[float] = []
+    created: list[_FakeAgent] = []
+
+    class _TrackingRunErrorOnce(_RunErrorOnceAgent):
+        def __init__(self) -> None:
+            super().__init__()
+            created.append(self)
 
     def on_update(_prompt: str) -> None:
         (project_tree / "current-handover-prompt.md").write_text(
@@ -290,13 +317,39 @@ def test_run_cycles_retries_run_error_without_detail(project_tree: Path):
         session_factory=_make_session_factory(
             project_tree,
             on_update=on_update,
-            agent_factory=_RunErrorOnceAgent,
+            agent_factory=_TrackingRunErrorOnce,
         ),
         sleep_fn=lambda seconds: sleeps.append(seconds),
     )
 
     assert result.completed_cycles == 1
-    assert sleeps == [5]
+    assert sleeps == []
+    assert len(created) == 1
+    assert created[0].sent[1] == EMPTY_RUN_ERROR_CONTINUE_PROMPT
+
+
+def test_run_cycles_does_not_fresh_retry_productive_run_drop(project_tree: Path):
+    """Mid-suite empty-detail drops must not start a second full implementation."""
+    cfg = _config(project_tree, retry_on="transient", retry_max_attempts=3)
+    sleeps: list[float] = []
+
+    with pytest.raises(AgentRunError) as exc_info:
+        run_cycles(
+            cfg,
+            get_next_task_fn=lambda _root, tag=None: _next_task(),
+            router=_router(),
+            session_factory=_make_session_factory(
+                project_tree,
+                agent_factory=_ProductiveDropAgent,
+            ),
+            sleep_fn=lambda seconds: sleeps.append(seconds),
+        )
+
+    err = exc_info.value
+    assert err.kind == RunFailureKind.RUN
+    assert err.same_agent_continued is True
+    assert "full cargo test suite" in (err.diagnostic_detail or "")
+    assert sleeps == []
 
 
 def test_run_cycles_does_not_retry_run_error_with_detail(project_tree: Path):

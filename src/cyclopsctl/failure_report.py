@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from cyclopsctl.runner import AgentRunError
+from cyclopsctl.runner import AgentRunError, looks_like_productive_run_drop
 
 CURSOR_PROJECTS_DIRNAME = "projects"
 AGENT_TRANSCRIPTS_DIRNAME = "agent-transcripts"
@@ -192,6 +192,13 @@ def format_failure_report(
     diagnostic = (getattr(exc, "diagnostic_detail", None) or "").strip()
     if diagnostic:
         lines.append(f"  context:    {diagnostic}")
+
+    if getattr(exc, "same_agent_continued", False):
+        lines.append("  recovery:   same-agent continue already attempted")
+        if looks_like_productive_run_drop(exc):
+            lines.append(
+                "              (dropped mid-work; not retrying a fresh agent)"
+            )
 
     transcript = resolve_transcript_path(project_root, exc.agent_id, home=home)
     lines.append(f"  transcript: {transcript if transcript is not None else _NO_TRANSCRIPT}")

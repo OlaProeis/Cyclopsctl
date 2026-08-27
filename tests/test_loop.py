@@ -56,12 +56,11 @@ class _FakeAgent:
 class _ErrorAgent(_FakeAgent):
     def send(self, prompt: str) -> _FakeRun:
         run = super().send(prompt)
-        if len(self.sent) == 1:
-            run.wait = lambda: RunResult(
-                id=run.id,
-                agent_id=run.agent_id,
-                status="error",
-            )
+        run.wait = lambda: RunResult(
+            id=run.id,
+            agent_id=run.agent_id,
+            status="error",
+        )
         return run
 
 
@@ -264,7 +263,10 @@ def test_run_cycles_executes_n_verified_cycles(project_tree: Path):
 
 def test_run_cycles_injects_ai_context_into_agent_prompts(project_tree: Path):
     (project_tree / "ai-context.md").write_text(
-        "# Cyclopsctl Rules\n\nAlways test.\n",
+        "# Cyclopsctl Rules\n\n"
+        "## Rules (DO NOT UPDATE)\n\nAlways test.\n\n"
+        "## Implementation Phase Rules\n\nImplement the current task.\n\n"
+        "## Update Phase Rules\n\nAdvance the handover.\n",
         encoding="utf-8",
     )
     cfg = _config(project_tree, cycles=1)
@@ -312,6 +314,7 @@ def test_run_cycles_injects_ai_context_into_agent_prompts(project_tree: Path):
     assert len(sent_prompts) == 2
     impl_prompt, update_prompt = sent_prompts
     assert impl_prompt.startswith(f"{AI_CONTEXT_SECTION_HEADER}\n\n# Cyclopsctl Rules")
+    assert "Rules (DO NOT UPDATE)" in impl_prompt
     assert "# Task ID: 8\n\nImplement task 8.\n" in impl_prompt
     assert "# Update\n" in update_prompt
     assert AI_CONTEXT_SECTION_HEADER not in update_prompt
